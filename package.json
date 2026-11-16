@@ -3,6 +3,7 @@
   "displayName": "CodeContext",
   "description": "Developer toolkit for exporting, importing, exploring, and sharing project context.",
   "version": "0.0.1",
+  "publisher": "rasoolzia",
   "engines": {
     "vscode": "^1.138.0"
   },
@@ -14,10 +15,19 @@
   "contributes": {
     "commands": [
       {
-        "command": "code-context.helloWorld",
-        "title": "Hello World"
+        "command": "code-context.exportContent",
+        "title": "CodeContext: Export Content"
       }
-    ]
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "code-context.exportContent",
+          "group": "codecontext@1",
+          "when": "resourceScheme == file"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",
