@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { exportContent } from "./commands/export-content";
+import { exportTree } from "./commands/export-tree";
 import { MarkdownDocumentProvider } from "./providers/markdown-document-provider";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -16,26 +17,42 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       "code-context.exportContent",
       async (resource: unknown, selectedResources: unknown) => {
-        const selectedUris = Array.isArray(selectedResources)
-          ? selectedResources.filter(
-              (value): value is vscode.Uri => value instanceof vscode.Uri,
-            )
-          : [];
-        const uris =
-          selectedUris.length > 0
-            ? selectedUris
-            : resource instanceof vscode.Uri
-              ? [resource]
-              : [];
-
-        const validUris = uris.filter(
-          (value): value is vscode.Uri => value instanceof vscode.Uri,
+        await exportContent(
+          markdownProvider,
+          ...getCommandResources(resource, selectedResources),
         );
+      },
+    ),
+  );
 
-        await exportContent(markdownProvider, ...validUris);
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "code-context.exportTree",
+      async (resource: unknown, selectedResources: unknown) => {
+        await exportTree(
+          markdownProvider,
+          ...getCommandResources(resource, selectedResources),
+        );
       },
     ),
   );
 }
 
 export function deactivate(): void {}
+
+function getCommandResources(
+  resource: unknown,
+  selectedResources: unknown,
+): vscode.Uri[] {
+  const selectedUris = Array.isArray(selectedResources)
+    ? selectedResources.filter(
+        (value): value is vscode.Uri => value instanceof vscode.Uri,
+      )
+    : [];
+
+  if (selectedUris.length > 0) {
+    return selectedUris;
+  }
+
+  return resource instanceof vscode.Uri ? [resource] : [];
+}

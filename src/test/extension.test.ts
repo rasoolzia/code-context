@@ -5,7 +5,15 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { generateMarkdown } from "../core/markdown/markdown-generator";
-import { collectResources } from "../infrastructure/vscode/resource-collector";
+import {
+  generateProjectTree,
+  type ProjectTreeEntry,
+} from "../core/markdown/project-tree-generator";
+import {
+  collectProjectTree,
+  collectResources,
+} from "../infrastructure/vscode/resource-collector";
+import { getRelativePath } from "../infrastructure/vscode/vscode-file-reader";
 
 suite("Export Content", () => {
   let testRoot: vscode.Uri | undefined;
@@ -20,6 +28,9 @@ suite("Export Content", () => {
       await updateTestWorkspaceFolder(testRoot, true);
       await vscode.workspace.fs.createDirectory(
         vscode.Uri.joinPath(testRoot, "src", "nested"),
+      );
+      await vscode.workspace.fs.createDirectory(
+        vscode.Uri.joinPath(testRoot, "src", "empty"),
       );
       await vscode.workspace.fs.createDirectory(
         vscode.Uri.joinPath(testRoot, "node_modules", "ignored"),
@@ -109,6 +120,85 @@ suite("Export Content", () => {
     assert.ok(markdown.includes("\n````\n"));
   });
 
+  test("generates a tree for one file with its parent directories", () => {
+    assert.strictEqual(
+      generateProjectTree([{ path: "src/example.ts", type: "file" }]),
+      [
+        "# Project Tree",
+        "",
+        "```text",
+        "src/",
+        "└── example.ts",
+        "```",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("generates multiple files in deterministic order", () => {
+    const entries: ProjectTreeEntry[] = [
+      { path: "z.ts", type: "file" },
+      { path: "a.ts", type: "file" },
+    ];
+
+    assert.strictEqual(
+      generateProjectTree(entries),
+      generateProjectTree([...entries].reverse()),
+    );
+    assert.ok(
+      generateProjectTree(entries).indexOf("a.ts") <
+        generateProjectTree(entries).indexOf("z.ts"),
+    );
+  });
+
+  test("renders nested directories and sibling files in a stable tree", () => {
+    assert.strictEqual(
+      generateProjectTree([
+        { path: "src", type: "directory" },
+        { path: "src/components", type: "directory" },
+        { path: "src/components/button.tsx", type: "file" },
+        { path: "src/components/input.tsx", type: "file" },
+        { path: "src/app.tsx", type: "file" },
+        { path: "src/main.tsx", type: "file" },
+        { path: "package.json", type: "file" },
+      ]),
+      [
+        "# Project Tree",
+        "",
+        "```text",
+        "src/",
+        "├── components/",
+        "│   ├── button.tsx",
+        "│   └── input.tsx",
+        "├── app.tsx",
+        "└── main.tsx",
+        "package.json",
+        "```",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  test("preserves empty directories", () => {
+    assert.ok(
+      generateProjectTree([{ path: "src/empty", type: "directory" }]).includes(
+        "src/empty/",
+      ),
+    );
+  });
+
+  test("deduplicates overlapping tree paths", () => {
+    const markdown = generateProjectTree([
+      { path: "src", type: "directory" },
+      { path: "src/nested", type: "directory" },
+      { path: "src/nested/example.ts", type: "file" },
+      { path: "src/nested/example.ts", type: "file" },
+    ]);
+
+    assert.strictEqual(markdown.split("example.ts").length - 1, 1);
+    assert.strictEqual(markdown.split("src/nested/").length - 1, 1);
+  });
+
   test("recursively collects files, prunes ignored directories, and deduplicates", async () => {
     const root = testRoot;
     assert.ok(root);
@@ -123,6 +213,86 @@ suite("Export Content", () => {
       "src/nested/example.ts",
       "src/top.ts",
     ]);
+  });
+
+  test("treats a selected nested file as the tree root", async () => {
+    const root = testRoot;
+    assert.ok(root);
+
+    const selectedFile = vscode.Uri.joinPath(
+      root,
+      "src",
+      "nested",
+      "example.ts",
+    );
+    const entries = await collectProjectTree([selectedFile]);
+
+    assert.deepStrictEqual(
+      entries.map((entry) => `${entry.type}:${entry.path}`),
+      ["file:example.ts"],
+    );
+  });
+
+  test("treats a selected nested folder as the tree root", async () => {
+    const root = testRoot;
+    assert.ok(root);
+
+    const selectedFolder = vscode.Uri.joinPath(root, "src", "nested");
+    const entries = await collectProjectTree([selectedFolder]);
+
+    assert.deepStrictEqual(
+      entries.map((entry) => `${entry.type}:${entry.path}`),
+      ["directory:nested", "file:nested/example.ts"],
+    );
+  });
+
+  test("preserves empty folders beneath a selected root", async () => {
+    const root = testRoot;
+    assert.ok(root);
+
+    const entries = await collectProjectTree([
+      vscode.Uri.joinPath(root, "src"),
+    ]);
+
+    assert.ok(
+      entries.some(
+        (entry) => entry.type === "directory" && entry.path === "src/empty",
+      ),
+    );
+  });
+
+  test("keeps multiple selected resources as separate roots", async () => {
+    const root = testRoot;
+    assert.ok(root);
+
+    const selectedFolder = vscode.Uri.joinPath(root, "src", "nested");
+    const selectedFile = vscode.Uri.joinPath(root, "src", "top.ts");
+    const entries = await collectProjectTree([selectedFolder, selectedFile]);
+
+    assert.deepStrictEqual(
+      entries.map((entry) => `${entry.type}:${entry.path}`),
+      ["directory:nested", "file:nested/example.ts", "file:top.ts"],
+    );
+  });
+
+  test("keeps workspace-relative paths when no resources are selected", async () => {
+    const root = testRoot;
+    assert.ok(root);
+
+    const selectedFile = vscode.Uri.joinPath(
+      root,
+      "src",
+      "nested",
+      "example.ts",
+    );
+    const entries = await collectProjectTree();
+    const expectedPath = getRelativePath(selectedFile).replace(/\\/g, "/");
+
+    assert.ok(
+      entries.some(
+        (entry) => entry.type === "file" && entry.path === expectedPath,
+      ),
+    );
   });
 });
 

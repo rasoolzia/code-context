@@ -10,13 +10,16 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "code-context.exportContent",
-        "title": "CodeContext: Export Content"
+        "title": "Export Content"
+      },
+      {
+        "command": "code-context.exportTree",
+        "title": "Export Project Tree"
       }
     ],
     "menus": {
@@ -24,6 +27,11 @@
         {
           "command": "code-context.exportContent",
           "group": "codecontext@1",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "code-context.exportTree",
+          "group": "codecontext@2",
           "when": "resourceScheme == file"
         }
       ]
