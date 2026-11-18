@@ -20,6 +20,10 @@
       {
         "command": "code-context.exportTree",
         "title": "Export Project Tree"
+      },
+      {
+        "command": "code-context.importContent",
+        "title": "CodeContext: Import Content"
       }
     ],
     "menus": {

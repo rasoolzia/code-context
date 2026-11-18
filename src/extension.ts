@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { exportContent } from "./commands/export-content";
 import { exportTree } from "./commands/export-tree";
+import { importContent } from "./commands/import-content";
 import { MarkdownDocumentProvider } from "./providers/markdown-document-provider";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -34,6 +35,13 @@ export function activate(context: vscode.ExtensionContext): void {
           ...getCommandResources(resource, selectedResources),
         );
       },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "code-context.importContent",
+      importContent,
     ),
   );
 }

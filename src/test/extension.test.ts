@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { generateMarkdown } from "../core/markdown/markdown-generator";
+import { parseMarkdownContent } from "../core/markdown/markdown-parser";
 import {
   generateProjectTree,
   type ProjectTreeEntry,
@@ -118,6 +119,215 @@ suite("Export Content", () => {
 
     assert.ok(markdown.includes("````typescript"));
     assert.ok(markdown.includes("\n````\n"));
+  });
+
+  test("parses one file from CodeContext Markdown", () => {
+    const files = [
+      {
+        path: "src/example.ts",
+        language: "typescript",
+        content: "const value = 1;",
+      },
+    ];
+
+    assert.deepStrictEqual(
+      parseMarkdownContent(generateMarkdown(files)),
+      files,
+    );
+  });
+
+  test("parses a backtick-quoted path heading", () => {
+    assert.deepStrictEqual(
+      parseMarkdownContent(
+        [
+          "# Code Context",
+          "## Files",
+          "### `src/test.ts`",
+          "```typescript",
+          "const value = 1;",
+          "```",
+        ].join("\n"),
+      ),
+      [
+        {
+          path: "src/test.ts",
+          language: "typescript",
+          content: "const value = 1;",
+        },
+      ],
+    );
+  });
+
+  test("parses a plain path with surrounding whitespace", () => {
+    assert.deepStrictEqual(
+      parseMarkdownContent(
+        [
+          "# Code Context",
+          "## Files",
+          "  src/test.ts  ",
+          "```typescript",
+          "const value = 1;",
+          "```",
+        ].join("\n"),
+      ),
+      [
+        {
+          path: "src/test.ts",
+          language: "typescript",
+          content: "const value = 1;",
+        },
+      ],
+    );
+  });
+
+  test("parses multiple files and nested paths", () => {
+    const files = [
+      {
+        path: "src/nested/example.ts",
+        language: "typescript",
+        content: "nested",
+      },
+      { path: "package.json", language: "json", content: "{}" },
+    ];
+
+    assert.deepStrictEqual(
+      parseMarkdownContent(generateMarkdown(files)),
+      files,
+    );
+  });
+
+  test("normalizes backslash path separators", () => {
+    const markdown = generateMarkdown([
+      {
+        path: "src\\nested\\example.ts",
+        language: "typescript",
+        content: "nested",
+      },
+    ]);
+
+    assert.deepStrictEqual(parseMarkdownContent(markdown), [
+      {
+        path: "src/nested/example.ts",
+        language: "typescript",
+        content: "nested",
+      },
+    ]);
+  });
+
+  test("parses file content containing triple backticks", () => {
+    const file = {
+      path: "src/example.ts",
+      language: "typescript",
+      content: 'const fence = "```";\n',
+    };
+
+    assert.deepStrictEqual(parseMarkdownContent(generateMarkdown([file])), [
+      file,
+    ]);
+  });
+
+  test("parses longer code fences without truncating content", () => {
+    const markdown = [
+      "# Code Context",
+      "",
+      "## Files",
+      "",
+      "### `src/example.ts`",
+      "",
+      "````typescript",
+      "```",
+      "````",
+      "",
+    ].join("\n");
+
+    assert.deepStrictEqual(parseMarkdownContent(markdown), [
+      { path: "src/example.ts", language: "typescript", content: "```" },
+    ]);
+  });
+
+  test("rejects duplicate paths", () => {
+    const file = {
+      path: "src/example.ts",
+      language: "typescript",
+      content: "first",
+    };
+    const markdown = generateMarkdown([
+      file,
+      { ...file, path: "src\\example.ts", content: "second" },
+    ]);
+
+    assert.throws(() => parseMarkdownContent(markdown), /more than once/);
+  });
+
+  test("rejects absolute paths", () => {
+    const markdown = generateMarkdown([
+      { path: "C:\\outside\\secret.ts", language: "typescript", content: "" },
+    ]);
+
+    assert.throws(() => parseMarkdownContent(markdown), /must be relative/);
+  });
+
+  test("rejects paths that escape the workspace", () => {
+    const markdown = generateMarkdown([
+      { path: "../outside.ts", language: "typescript", content: "" },
+    ]);
+
+    assert.throws(() => parseMarkdownContent(markdown), /cannot escape/);
+  });
+
+  test("rejects malformed CodeContext Markdown", () => {
+    assert.throws(
+      () =>
+        parseMarkdownContent(
+          "# Code Context\n\n## Files\n\n```typescript\ncode\n```\n",
+        ),
+      /file path/i,
+    );
+  });
+
+  test("preserves empty file content", () => {
+    const file = { path: "empty.txt", language: "plaintext", content: "" };
+
+    assert.deepStrictEqual(parseMarkdownContent(generateMarkdown([file])), [
+      file,
+    ]);
+  });
+
+  test("accepts an empty file without a fence before a non-empty file", () => {
+    const markdown = [
+      "# Code Context",
+      "",
+      "## Files",
+      "",
+      "### `src/test1.ts`",
+      "",
+      "",
+      "### `src/test2.ts`",
+      "",
+      "```text",
+      "two",
+      "```",
+    ].join("\n");
+
+    assert.deepStrictEqual(parseMarkdownContent(markdown), [
+      { path: "src/test1.ts", language: "", content: "" },
+      { path: "src/test2.ts", language: "text", content: "two" },
+    ]);
+  });
+
+  test("accepts an empty file at the end without a fence", () => {
+    const markdown = [
+      "# Code Context",
+      "",
+      "## Files",
+      "",
+      "src/empty.ts",
+      "",
+    ].join("\n");
+
+    assert.deepStrictEqual(parseMarkdownContent(markdown), [
+      { path: "src/empty.ts", language: "", content: "" },
+    ]);
   });
 
   test("generates a tree for one file with its parent directories", () => {
