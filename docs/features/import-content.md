@@ -6,9 +6,9 @@ Import a CodeContext Markdown content export into a workspace. The importer recr
 
 ## User Workflow
 
-1. Run **CodeContext: Import Content** from the Command Palette.
+1. Run **CodeContext: Import Content** from the Command Palette, or open the shared **CodeContext: Import** panel and select the **Import Content** tab.
 2. Paste the complete CodeContext Markdown export into the multiline editor.
-3. Select **Import**. Validation errors appear in the panel; invalid Markdown or unsafe paths are not written.
+3. Select **Import Content**. Validation errors appear in the panel; invalid Markdown or unsafe paths are not written.
 4. Choose a destination workspace folder if the current workspace has multiple roots.
 5. Confirm the import. The confirmation states how many files will be created or updated.
 
@@ -60,3 +60,4 @@ Every parsed file is created or updated under the selected workspace folder. Mis
 - One workspace folder is selected for the entire import; files cannot be routed to different roots in a multi-root workspace.
 - Filesystem failures during the write phase are reported with the affected path, but earlier successful writes are not rolled back.
 - The panel is an in-memory paste surface and does not save the pasted Markdown as a document.
+- The shared panel also provides Import Project Tree and Import Paths tabs; each input format has its own parser.

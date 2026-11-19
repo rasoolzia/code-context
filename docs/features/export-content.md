@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Export source files and their contents into a virtual Markdown document that can be viewed and edited in VS Code.
+Export source files and their contents into a new native untitled Markdown document. The generated document is editable, can be saved with Ctrl+S or Save As, and is not automatically written to the workspace.
 
 ## Supported Selections
 
@@ -18,6 +18,6 @@ Paths are workspace-relative and use forward slashes. Multi-root exports prefix 
 
 ## Output Format
 
-The virtual `code-context:` document contains a `# Code Context` title, a `## Files` section, and one section per file with a language-tagged fenced code block. Fence lengths are increased as needed to keep embedded backticks in file contents from closing the block.
+The Markdown document contains a `# Code Context` title, a `## Files` section, and one section per file with a language-tagged fenced code block. Fence lengths are increased as needed to keep embedded backticks in file contents from closing the block.
 
-The export preserves VS Code language IDs. Individual unreadable files produce a warning while the remaining files can still be exported. The virtual document is not persisted automatically.
+The export preserves VS Code language IDs. Individual unreadable files produce a warning while the remaining files can still be exported. The untitled document remains in VS Code until the user saves or closes it.

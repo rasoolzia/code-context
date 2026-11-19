@@ -1,4 +1,5 @@
 import type { ContextFile } from "../models/context-file";
+import { normalizeSafeRelativePath } from "../paths/filesystem-paths";
 
 interface MarkdownLine {
   text: string;
@@ -175,34 +176,13 @@ function findClosingFence(
 }
 
 function normalizeSafePath(path: string, lineNumber: number): string {
-  const normalizedPath = path.replace(/\\/g, "/");
-
-  if (
-    normalizedPath.length === 0 ||
-    normalizedPath.includes("\0") ||
-    normalizedPath.startsWith("/") ||
-    /^[a-zA-Z]:/.test(normalizedPath)
-  ) {
-    throw new Error(`The file path on line ${lineNumber} must be relative.`);
+  try {
+    return normalizeSafeRelativePath(path);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "The path is invalid.";
+    throw new Error(`Invalid file path on line ${lineNumber}: ${message}`);
   }
-
-  const segments = normalizedPath.split("/");
-
-  if (segments.some((segment) => segment === "..")) {
-    throw new Error(
-      `The file path on line ${lineNumber} cannot escape the workspace.`,
-    );
-  }
-
-  const safeSegments = segments.filter(
-    (segment) => segment !== "" && segment !== ".",
-  );
-
-  if (safeSegments.length === 0) {
-    throw new Error(`The file path on line ${lineNumber} is empty.`);
-  }
-
-  return safeSegments.join("/");
 }
 
 function getLines(markdown: string): MarkdownLine[] {

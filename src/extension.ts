@@ -1,25 +1,17 @@
 import * as vscode from "vscode";
 import { exportContent } from "./commands/export-content";
+import { exportPaths } from "./commands/export-paths";
 import { exportTree } from "./commands/export-tree";
 import { importContent } from "./commands/import-content";
-import { MarkdownDocumentProvider } from "./providers/markdown-document-provider";
+import { importPaths } from "./commands/import-paths";
+import { importProjectTree } from "./commands/import-project-tree";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const markdownProvider = new MarkdownDocumentProvider();
-
-  context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(
-      "code-context",
-      markdownProvider,
-    ),
-  );
-
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "code-context.exportContent",
       async (resource: unknown, selectedResources: unknown) => {
         await exportContent(
-          markdownProvider,
           ...getCommandResources(resource, selectedResources),
         );
       },
@@ -30,10 +22,16 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       "code-context.exportTree",
       async (resource: unknown, selectedResources: unknown) => {
-        await exportTree(
-          markdownProvider,
-          ...getCommandResources(resource, selectedResources),
-        );
+        await exportTree(...getCommandResources(resource, selectedResources));
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "code-context.exportPaths",
+      async (resource: unknown, selectedResources: unknown) => {
+        await exportPaths(...getCommandResources(resource, selectedResources));
       },
     ),
   );
@@ -43,6 +41,17 @@ export function activate(context: vscode.ExtensionContext): void {
       "code-context.importContent",
       importContent,
     ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "code-context.importTree",
+      importProjectTree,
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("code-context.importPaths", importPaths),
   );
 }
 

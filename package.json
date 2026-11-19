@@ -15,15 +15,33 @@
     "commands": [
       {
         "command": "code-context.exportContent",
-        "title": "Export Content"
+        "title": "Export Content",
+        "category": "CodeContext"
       },
       {
         "command": "code-context.exportTree",
-        "title": "Export Project Tree"
+        "title": "Export Project Tree",
+        "category": "CodeContext"
+      },
+      {
+        "command": "code-context.exportPaths",
+        "title": "Export Paths",
+        "category": "CodeContext"
       },
       {
         "command": "code-context.importContent",
-        "title": "CodeContext: Import Content"
+        "title": "Import Content",
+        "category": "CodeContext"
+      },
+      {
+        "command": "code-context.importTree",
+        "title": "Import Project Tree",
+        "category": "CodeContext"
+      },
+      {
+        "command": "code-context.importPaths",
+        "title": "Import Paths",
+        "category": "CodeContext"
       }
     ],
     "menus": {
@@ -36,6 +54,11 @@
         {
           "command": "code-context.exportTree",
           "group": "codecontext@2",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "code-context.exportPaths",
+          "group": "codecontext@3",
           "when": "resourceScheme == file"
         }
       ]

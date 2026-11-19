@@ -1,16 +1,13 @@
 import * as vscode from "vscode";
 import { generateMarkdown } from "../core/markdown/markdown-generator";
+import { openExportDocument } from "../infrastructure/vscode/open-export-document";
 import { collectResources } from "../infrastructure/vscode/resource-collector";
 import {
   getRelativePath,
   readContextFile,
 } from "../infrastructure/vscode/vscode-file-reader";
-import { MarkdownDocumentProvider } from "../providers/markdown-document-provider";
 
-export async function exportContent(
-  provider: MarkdownDocumentProvider,
-  ...resources: vscode.Uri[]
-): Promise<void> {
+export async function exportContent(...resources: vscode.Uri[]): Promise<void> {
   if ((vscode.workspace.workspaceFolders ?? []).length === 0) {
     await vscode.window.showWarningMessage(
       "Open a folder or workspace before exporting content.",
@@ -59,18 +56,5 @@ export async function exportContent(
   }
 
   const markdown = generateMarkdown(files);
-
-  const documentUri = vscode.Uri.parse(
-    `code-context:export-${Date.now()}-${nextDocumentId++}.md`,
-  );
-
-  provider.setContent(documentUri, markdown);
-
-  const document = await vscode.workspace.openTextDocument(documentUri);
-
-  await vscode.window.showTextDocument(document, {
-    preview: false,
-  });
+  await openExportDocument(markdown, "markdown");
 }
-
-let nextDocumentId = 0;

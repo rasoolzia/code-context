@@ -10,10 +10,15 @@ import {
   generateProjectTree,
   type ProjectTreeEntry,
 } from "../core/markdown/project-tree-generator";
+import { parseProjectTree } from "../core/markdown/project-tree-parser";
+import type { FilesystemEntry } from "../core/models/filesystem-entry";
+import { generatePathList } from "../core/path-list-generator";
+import { parsePathList } from "../core/paths/path-list-parser";
 import {
   collectProjectTree,
   collectResources,
 } from "../infrastructure/vscode/resource-collector";
+import { createFilesystemStructure } from "../infrastructure/vscode/structure-writer";
 import { getRelativePath } from "../infrastructure/vscode/vscode-file-reader";
 
 suite("Export Content", () => {
@@ -293,6 +298,127 @@ suite("Export Content", () => {
     ]);
   });
 
+  test("parses a project tree with one file or directory root", () => {
+    assert.deepStrictEqual(parseProjectTree("Button.tsx"), [
+      { path: "Button.tsx", type: "file" },
+    ]);
+    assert.deepStrictEqual(parseProjectTree("components/"), [
+      { path: "components", type: "directory" },
+    ]);
+  });
+
+  test("parses nested trees, multiple roots, and empty directories", () => {
+    const entries = parseProjectTree(
+      [
+        "src/",
+        "├── app/",
+        "│   └── page.tsx",
+        "└── empty/",
+        "",
+        "components/",
+        "└── Button.tsx",
+      ].join("\n"),
+    );
+
+    assert.deepStrictEqual(entries, [
+      { path: "components", type: "directory" },
+      { path: "components/Button.tsx", type: "file" },
+      { path: "src", type: "directory" },
+      { path: "src/app", type: "directory" },
+      { path: "src/app/page.tsx", type: "file" },
+      { path: "src/empty", type: "directory" },
+    ]);
+  });
+
+  test("accepts common ASCII tree connectors", () => {
+    assert.deepStrictEqual(
+      parseProjectTree("src/\n|-- app/\n|   `-- page.tsx"),
+      [
+        { path: "src", type: "directory" },
+        { path: "src/app", type: "directory" },
+        { path: "src/app/page.tsx", type: "file" },
+      ],
+    );
+  });
+
+  test("accepts consistently indented bullet-style trees", () => {
+    assert.deepStrictEqual(
+      parseProjectTree("- src/\n  - app/\n    - page.tsx"),
+      [
+        { path: "src", type: "directory" },
+        { path: "src/app", type: "directory" },
+        { path: "src/app/page.tsx", type: "file" },
+      ],
+    );
+  });
+
+  test("parses the Markdown output from Export Project Tree", () => {
+    const tree = generateProjectTree([
+      { path: "src", type: "directory" },
+      { path: "src/app.ts", type: "file" },
+    ]);
+
+    assert.deepStrictEqual(parseProjectTree(tree), [
+      { path: "src", type: "directory" },
+      { path: "src/app.ts", type: "file" },
+    ]);
+  });
+
+  test("deduplicates repeated tree entries and rejects type conflicts", () => {
+    assert.deepStrictEqual(parseProjectTree("src/\nsrc/"), [
+      { path: "src", type: "directory" },
+    ]);
+    assert.throws(
+      () => parseProjectTree("foo\nfoo/"),
+      /both a file and a directory/,
+    );
+    assert.throws(
+      () => parseProjectTree("foo\nfoo/bar.ts"),
+      /parent directory/,
+    );
+  });
+
+  test("rejects malformed and unsafe project trees", () => {
+    assert.throws(() => parseProjectTree(""), /project tree/i);
+    assert.throws(
+      () => parseProjectTree("│   └── orphan.ts"),
+      /missing parent/i,
+    );
+    assert.throws(() => parseProjectTree("C:\\outside\\file.ts"), /relative/i);
+    assert.throws(() => parseProjectTree("../outside.ts"), /escape/i);
+    assert.throws(() => parseProjectTree("bad\0path.ts"), /relative/i);
+  });
+
+  test("parses, normalizes, and deduplicates path lists", () => {
+    const entries = parsePathList(
+      "\nsrc/app/page.tsx\r\nsrc\\app\\page.tsx\n src/components/Button.tsx \n",
+    );
+
+    assert.deepStrictEqual(entries, [
+      { path: "src/app/page.tsx", type: "file" },
+      { path: "src/components/Button.tsx", type: "file" },
+    ]);
+  });
+
+  test("rejects invalid and conflicting path lists", () => {
+    assert.throws(() => parsePathList("\n  \n"), /at least one/i);
+    assert.throws(() => parsePathList("C:\\outside\\file.ts"), /relative/i);
+    assert.throws(() => parsePathList("../outside.ts"), /escape/i);
+    assert.throws(() => parsePathList("bad\0path.ts"), /relative/i);
+    assert.throws(
+      () => parsePathList("src/foo\nsrc/foo/bar.ts"),
+      /parent directory/i,
+    );
+  });
+
+  test("generates a deterministic normalized path list", () => {
+    assert.strictEqual(
+      generatePathList(["src\\z.ts", "src/a.ts", "src/a.ts"]),
+      "src/a.ts\nsrc/z.ts",
+    );
+    assert.strictEqual(generatePathList([]), "");
+  });
+
   test("accepts an empty file without a fence before a non-empty file", () => {
     const markdown = [
       "# Code Context",
@@ -425,6 +551,101 @@ suite("Export Content", () => {
     ]);
   });
 
+  test("collects workspace files when no Export Paths resource is selected", async () => {
+    const root = testRoot;
+    assert.ok(root);
+    const expectedFile = vscode.Uri.joinPath(root, "src", "top.ts");
+    const collected = await collectResources();
+
+    assert.ok(
+      collected.some(
+        (uri) =>
+          normalizePath(getRelativePath(uri)) ===
+          normalizePath(getRelativePath(expectedFile)),
+      ),
+    );
+    assert.ok(
+      collected.every(
+        (uri) => !uri.path.toLowerCase().includes("node_modules"),
+      ),
+    );
+  });
+
+  test("collects selected files and nested folders without duplicates", async () => {
+    const root = testRoot;
+    assert.ok(root);
+
+    const selectedFile = vscode.Uri.joinPath(root, "src", "top.ts");
+    const selectedFolder = vscode.Uri.joinPath(root, "src", "nested");
+    const collected = await collectResources([
+      selectedFile,
+      selectedFolder,
+      selectedFile,
+    ]);
+
+    assert.deepStrictEqual(
+      collected.map((uri) => getRelativePath(uri)),
+      ["src/nested/example.ts", "src/top.ts"],
+    );
+  });
+
+  test("returns no files for a resource outside the workspace", async () => {
+    const outsideResource = vscode.Uri.file(
+      path.join(tmpdir(), `code-context-outside-${randomUUID()}.ts`),
+    );
+
+    assert.deepStrictEqual(await collectResources([outsideResource]), []);
+  });
+
+  test("creates structure without changing existing files", async () => {
+    const root = testRoot;
+    assert.ok(root);
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(root);
+    assert.ok(workspaceFolder);
+    const existingFile = vscode.Uri.joinPath(root, "src", "top.ts");
+    const newFile = vscode.Uri.joinPath(root, "src", "created", "empty.ts");
+    const originalContent = await vscode.workspace.fs.readFile(existingFile);
+
+    await createFilesystemStructure(workspaceFolder, [
+      { path: "src/created", type: "directory" },
+      { path: "src/created/empty.ts", type: "file" },
+      { path: "src/top.ts", type: "file" },
+    ]);
+
+    assert.deepStrictEqual(
+      await vscode.workspace.fs.readFile(existingFile),
+      originalContent,
+    );
+    assert.strictEqual((await vscode.workspace.fs.readFile(newFile)).length, 0);
+    assert.strictEqual(
+      (
+        await vscode.workspace.fs.stat(
+          vscode.Uri.joinPath(root, "src", "created"),
+        )
+      ).type & vscode.FileType.Directory,
+      vscode.FileType.Directory,
+    );
+  });
+
+  test("rejects structure conflicts before creating files", async () => {
+    const root = testRoot;
+    assert.ok(root);
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(root);
+    assert.ok(workspaceFolder);
+    const entries: FilesystemEntry[] = [
+      { path: "new-parent", type: "file" },
+      { path: "new-parent/child.ts", type: "file" },
+    ];
+
+    await assert.rejects(
+      createFilesystemStructure(workspaceFolder, entries),
+      /parent directory/i,
+    );
+    await assert.rejects(async () =>
+      vscode.workspace.fs.stat(vscode.Uri.joinPath(root, "new-parent")),
+    );
+  });
+
   test("treats a selected nested file as the tree root", async () => {
     const root = testRoot;
     assert.ok(root);
@@ -505,6 +726,10 @@ suite("Export Content", () => {
     );
   });
 });
+
+function normalizePath(pathValue: string): string {
+  return pathValue.replace(/\\/g, "/");
+}
 
 async function updateTestWorkspaceFolder(
   uri: vscode.Uri,

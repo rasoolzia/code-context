@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Export a project structure as a virtual Markdown tree without reading file contents.
+Export a project structure as a Markdown tree without reading file contents. The result opens as a native untitled document that can be edited, saved with Ctrl+S or Save As, and is not automatically written to the workspace.
 
 ## Supported Selections
 
@@ -18,4 +18,4 @@ Selected resources are rendered relative to their selected roots, without worksp
 
 ## Output Format
 
-The virtual `code-context:` document starts with `# Project Tree` and contains a fenced `text` block with a Unicode branch tree. No source file contents are included.
+The Markdown document starts with `# Project Tree` and contains a fenced `text` block with a Unicode branch tree. No source file contents are included.

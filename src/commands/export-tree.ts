@@ -1,12 +1,9 @@
 import * as vscode from "vscode";
 import { generateProjectTree } from "../core/markdown/project-tree-generator";
+import { openExportDocument } from "../infrastructure/vscode/open-export-document";
 import { collectProjectTree } from "../infrastructure/vscode/resource-collector";
-import { MarkdownDocumentProvider } from "../providers/markdown-document-provider";
 
-export async function exportTree(
-  provider: MarkdownDocumentProvider,
-  ...resources: vscode.Uri[]
-): Promise<void> {
+export async function exportTree(...resources: vscode.Uri[]): Promise<void> {
   if ((vscode.workspace.workspaceFolders ?? []).length === 0) {
     await vscode.window.showWarningMessage(
       "Open a folder or workspace before exporting the project tree.",
@@ -25,14 +22,5 @@ export async function exportTree(
     return;
   }
 
-  const documentUri = vscode.Uri.parse(
-    `code-context:tree-${Date.now()}-${nextDocumentId++}.md`,
-  );
-  provider.setContent(documentUri, generateProjectTree(entries));
-
-  const document = await vscode.workspace.openTextDocument(documentUri);
-
-  await vscode.window.showTextDocument(document, { preview: false });
+  await openExportDocument(generateProjectTree(entries), "markdown");
 }
-
-let nextDocumentId = 0;
