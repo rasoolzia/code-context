@@ -1,4 +1,5 @@
 import type { ContextFile } from "../models/context-file";
+import { getSafeCodeFence } from "./code-fence";
 
 export function generateMarkdown(files: ContextFile[]): string {
   const sortedFiles = [...files].sort((left, right) => {
@@ -11,9 +12,7 @@ export function generateMarkdown(files: ContextFile[]): string {
   });
 
   const sections = sortedFiles.map((file) => {
-    const codeFence = "`".repeat(
-      Math.max(3, longestBacktickRun(file.content) + 1),
-    );
+    const codeFence = getSafeCodeFence(file.content);
     const pathFence = "`".repeat(
       Math.max(1, longestBacktickRun(file.path) + 1),
     );

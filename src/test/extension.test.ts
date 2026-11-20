@@ -1,9 +1,20 @@
 import * as assert from "assert";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  rename as renameDiskFile,
+  rm,
+  writeFile as writeDiskFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import {
+  generateBeforeAfterGitContext,
+  generateGitDiffOutput,
+} from "../core/git-context-generator";
 import { generateMarkdown } from "../core/markdown/markdown-generator";
 import { parseMarkdownContent } from "../core/markdown/markdown-parser";
 import {
@@ -14,6 +25,15 @@ import { parseProjectTree } from "../core/markdown/project-tree-parser";
 import type { FilesystemEntry } from "../core/models/filesystem-entry";
 import { generatePathList } from "../core/path-list-generator";
 import { parsePathList } from "../core/paths/path-list-parser";
+import {
+  findGitRepositories,
+  getChangedGitFiles,
+  getGitDiff,
+  getGitFileAtHead,
+  getWorkingGitFile,
+  GitCommandError,
+  GitRepositoryNotFoundError,
+} from "../infrastructure/git/git-client";
 import {
   collectProjectTree,
   collectResources,
@@ -727,8 +747,284 @@ suite("Export Content", () => {
   });
 });
 
+suite("Git Context", () => {
+  test("detects staged and unstaged modifications and exports changes only", async () => {
+    await withTemporaryGitRepository(
+      {
+        "staged.ts": [
+          "const value = 1;",
+          ...Array.from(
+            { length: 10 },
+            (_, index) => `const context${index} = true;`,
+          ),
+          "",
+        ].join("\n"),
+        "unstaged.ts": "const value = 3;\n",
+      },
+      async (root) => {
+        await writeDiskFile(
+          path.join(root, "staged.ts"),
+          [
+            "const value = 2;",
+            ...Array.from(
+              { length: 10 },
+              (_, index) => `const context${index} = true;`,
+            ),
+            "",
+          ].join("\n"),
+        );
+        runGitForTest(root, ["add", "staged.ts"]);
+        await writeDiskFile(
+          path.join(root, "staged.ts"),
+          [
+            "const value = 4;",
+            ...Array.from(
+              { length: 10 },
+              (_, index) => `const context${index} = true;`,
+            ),
+            "",
+          ].join("\n"),
+        );
+        await writeDiskFile(
+          path.join(root, "unstaged.ts"),
+          "const value = 5;\n",
+        );
+
+        const changes = await getChangedGitFiles({ root });
+        const diff = await getGitDiff({ root }, changes);
+
+        assert.deepStrictEqual(
+          changes.map((change) => change.path),
+          ["staged.ts", "unstaged.ts"],
+        );
+        assert.ok(diff.includes("-const value = 1;"));
+        assert.ok(diff.includes("+const value = 4;"));
+        assert.ok(diff.includes("-const value = 3;"));
+        assert.ok(diff.includes("+const value = 5;"));
+        assert.ok(!diff.includes("const context9 = true;"));
+      },
+    );
+  });
+
+  test("includes untracked files as added-file diffs", async () => {
+    await withTemporaryGitRepository({}, async (root) => {
+      await writeDiskFile(path.join(root, "new.ts"), "const added = true;\n");
+      const changes = await getChangedGitFiles({ root });
+      const diff = await getGitDiff({ root }, changes);
+
+      assert.strictEqual(changes[0].untracked, true);
+      assert.ok(diff.includes("new file mode"));
+      assert.ok(diff.includes("+const added = true;"));
+    });
+  });
+
+  test("handles deleted and renamed files", async () => {
+    await withTemporaryGitRepository(
+      {
+        "old-name.ts": "export const value = true;\n",
+        "deleted.ts": "remove me\n",
+      },
+      async (root) => {
+        await renameDiskFile(
+          path.join(root, "old-name.ts"),
+          path.join(root, "new-name.ts"),
+        );
+        await rm(path.join(root, "deleted.ts"));
+        runGitForTest(root, ["add", "-A"]);
+
+        const changes = await getChangedGitFiles({ root });
+        const rename = changes.find((change) => change.path === "new-name.ts");
+        const deleted = changes.find((change) => change.path === "deleted.ts");
+
+        assert.strictEqual(rename?.oldPath, "old-name.ts");
+        assert.strictEqual(deleted?.status.includes("D"), true);
+      },
+    );
+  });
+
+  test("reports no changes and rejects non-Git workspaces", async () => {
+    await withTemporaryGitRepository({}, async (root) => {
+      assert.deepStrictEqual(await getChangedGitFiles({ root }), []);
+    });
+
+    const nonRepository = await mkdtemp(
+      path.join(tmpdir(), `code-context-not-git-${randomUUID()}-`),
+    );
+
+    try {
+      await assert.rejects(
+        findGitRepositories([nonRepository]),
+        GitRepositoryNotFoundError,
+      );
+    } finally {
+      await rm(nonRepository, { recursive: true, force: true });
+    }
+  });
+
+  test("reports Git command failures", async () => {
+    await withTemporaryGitRepository({}, async (root) => {
+      await rm(path.join(root, ".git"), { recursive: true, force: true });
+
+      await assert.rejects(getChangedGitFiles({ root }), GitCommandError);
+    });
+  });
+
+  test("Before/After output contains complete HEAD and working-tree contents", async () => {
+    await withTemporaryGitRepository(
+      { "src/example.ts": "const before = 1;\nconst unchanged = true;\n" },
+      async (root) => {
+        await writeDiskFile(
+          path.join(root, "src/example.ts"),
+          "const after = 2;\nconst unchanged = true;\n",
+        );
+        const before = await getGitFileAtHead({ root }, "src/example.ts");
+        const after = await getWorkingGitFile({ root }, "src/example.ts");
+        const output = generateBeforeAfterGitContext([
+          {
+            path: "src/example.ts",
+            status: " M",
+            before: before.content,
+            after: after.content,
+            beforeBinary: before.binary,
+            afterBinary: after.binary,
+          },
+        ]);
+
+        assert.ok(output.includes("const before = 1;"));
+        assert.ok(output.includes("const after = 2;"));
+        assert.ok(output.includes("const unchanged = true;"));
+      },
+    );
+  });
+
+  test("represents untracked files with empty before content and deleted after content", async () => {
+    await withTemporaryGitRepository(
+      { "deleted.ts": "complete old contents\n" },
+      async (root) => {
+        await writeDiskFile(
+          path.join(root, "new.ts"),
+          "complete new contents\n",
+        );
+        await rm(path.join(root, "deleted.ts"));
+        const changes = await getChangedGitFiles({ root });
+        const untracked = changes.find((change) => change.path === "new.ts");
+        const deleted = changes.find((change) => change.path === "deleted.ts");
+        assert.ok(untracked);
+        assert.ok(deleted);
+
+        const before = await getGitFileAtHead({ root }, deleted.path);
+        const output = generateBeforeAfterGitContext([
+          {
+            path: untracked.path,
+            status: untracked.status,
+            before: "",
+            after: (await getWorkingGitFile({ root }, untracked.path)).content,
+            beforeBinary: false,
+            afterBinary: false,
+          },
+          {
+            path: deleted.path,
+            status: deleted.status,
+            before: before.content,
+            after: "",
+            beforeBinary: false,
+            afterBinary: false,
+          },
+        ]);
+
+        assert.ok(output.includes("complete old contents"));
+        assert.ok(output.includes("complete new contents"));
+        assert.ok(output.includes("### Before"));
+        assert.ok(output.includes("### After"));
+      },
+    );
+  });
+
+  test("handles binary files without embedding binary data", async () => {
+    await withTemporaryGitRepository({}, async (root) => {
+      await writeDiskFile(
+        path.join(root, "image.bin"),
+        Buffer.from([0, 1, 2, 255]),
+      );
+      const changes = await getChangedGitFiles({ root });
+      const diff = await getGitDiff({ root }, changes);
+      const file = await getWorkingGitFile({ root }, "image.bin");
+      const output = generateBeforeAfterGitContext([
+        {
+          path: "image.bin",
+          status: "??",
+          before: "",
+          after: file.content,
+          beforeBinary: false,
+          afterBinary: file.binary,
+        },
+      ]);
+
+      assert.ok(diff.includes("Binary files"));
+      assert.strictEqual(file.binary, true);
+      assert.ok(output.includes("[Binary content omitted]"));
+    });
+  });
+
+  test("sorts Before/After sections deterministically and keeps Git Diff output raw", () => {
+    const file = (filePath: string) => ({
+      path: filePath,
+      status: " M",
+      before: "old",
+      after: "new",
+      beforeBinary: false,
+      afterBinary: false,
+    });
+    const output = generateBeforeAfterGitContext([file("z.ts"), file("a.ts")]);
+
+    assert.ok(output.indexOf("a.ts") < output.indexOf("z.ts"));
+    assert.strictEqual(
+      generateGitDiffOutput("diff --git a/a.ts b/a.ts\n+new \n"),
+      "diff --git a/a.ts b/a.ts\n+new \n",
+    );
+  });
+});
+
 function normalizePath(pathValue: string): string {
   return pathValue.replace(/\\/g, "/");
+}
+
+async function withTemporaryGitRepository(
+  initialFiles: Record<string, string>,
+  run: (root: string) => Promise<void>,
+): Promise<void> {
+  const root = await mkdtemp(
+    path.join(tmpdir(), `code-context-git-${randomUUID()}-`),
+  );
+
+  try {
+    runGitForTest(root, ["init", "-q"]);
+    runGitForTest(root, ["config", "user.name", "CodeContext Test"]);
+    runGitForTest(root, [
+      "config",
+      "user.email",
+      "code-context@example.invalid",
+    ]);
+
+    for (const [filePath, content] of Object.entries(initialFiles)) {
+      const absolutePath = path.join(root, ...filePath.split("/"));
+      await mkdir(path.dirname(absolutePath), { recursive: true });
+      await writeDiskFile(absolutePath, content);
+    }
+
+    if (Object.keys(initialFiles).length > 0) {
+      runGitForTest(root, ["add", "--all"]);
+      runGitForTest(root, ["commit", "-qm", "initial"]);
+    }
+
+    await run(root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+function runGitForTest(cwd: string, args: string[]): void {
+  execFileSync("git", args, { cwd, stdio: "ignore", windowsHide: true });
 }
 
 async function updateTestWorkspaceFolder(

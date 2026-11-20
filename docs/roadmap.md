@@ -9,12 +9,12 @@
 - ✅ Editable / Saveable Export Documents
 - ✅ Import Project Tree
 - ✅ Import Paths
+- ✅ Git Diff / Changed Files Context
+- ✅ Before/After Git Context
 
 ## Planned
 
-- 🔜 Git Diff / Changed Files Context
-- 🔜 Before/After Git Context
-- 🔜 Next.js routing report
+- 🔜 Nuxt/Next.js routing report
 - 🔜 UX / commands / error handling / polish
 - 🔜 README + screenshots + packaging + Marketplace preparation
 - 🔜 Tag + GitHub Release

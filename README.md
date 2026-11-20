@@ -1,10 +1,17 @@
-# code-context README
+# CodeContext
 
-This is the README for your extension "code-context". After writing up a brief description, we recommend including the following sections.
+CodeContext exports, imports, and explores project context from Visual Studio Code. Generated exports open as editable untitled documents and are not saved to the workspace unless you choose Save or Save As.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- **Export Content** creates Markdown containing selected source files or the complete workspace.
+- **Export Project Tree** creates a directory tree without file contents.
+- **Export Paths** creates a sorted plain-text list of workspace-relative file paths.
+- **Import Content** imports CodeContext Markdown after validation and overwrite confirmation.
+- **Import Project Tree** creates directories and empty files without changing existing files.
+- **Import Paths** creates directories and empty files from a newline-separated path list.
+- **Git Diff** exports staged and unstaged changes as a patch, including untracked files as additions.
+- **Before/After Git Context** exports complete `HEAD` and working-tree contents for changed files.
 
 For example if there is an image subfolder under your extension project workspace:
 
@@ -14,7 +21,13 @@ For example if there is an image subfolder under your extension project workspac
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+Git must be installed and available on `PATH` to use Git Diff and Before/After Git Context. The extension adds no runtime dependencies.
+
+## Usage
+
+Run commands from the Command Palette under the **CodeContext** category. Export Content, Export Project Tree, Export Paths, Git Diff, and Before/After Git Context open editable untitled documents. Import Content, Import Project Tree, and Import Paths share the CodeContext Import panel.
+
+Git Diff contains changed hunks, Git metadata, and standard nearby context lines, not complete unchanged files. Before/After Git Context contains full file contents at `HEAD` and in the current working tree. Both commands include staged and unstaged changes and do not save output to the workspace automatically.
 
 ## Extension Settings
 
@@ -24,8 +37,8 @@ For example:
 
 This extension contributes the following settings:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- `myExtension.enable`: Enable/disable this extension.
+- `myExtension.thing`: Set to `blah` to do something.
 
 ## Known Issues
 
@@ -53,19 +66,19 @@ Added features X, Y, and Z.
 
 Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+- [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
 
 ## Working with Markdown
 
 You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+- Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
+- Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
+- Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
 
 ## For more information
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+- [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
+- [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
 
 **Enjoy!**

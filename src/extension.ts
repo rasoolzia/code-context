@@ -1,7 +1,9 @@
 import * as vscode from "vscode";
+import { exportBeforeAfterGitContext } from "./commands/before-after-git-context";
 import { exportContent } from "./commands/export-content";
 import { exportPaths } from "./commands/export-paths";
 import { exportTree } from "./commands/export-tree";
+import { exportGitDiff } from "./commands/git-diff";
 import { importContent } from "./commands/import-content";
 import { importPaths } from "./commands/import-paths";
 import { importProjectTree } from "./commands/import-project-tree";
@@ -52,6 +54,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand("code-context.importPaths", importPaths),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("code-context.gitDiff", exportGitDiff),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "code-context.beforeAfterGitContext",
+      exportBeforeAfterGitContext,
+    ),
   );
 }
 
