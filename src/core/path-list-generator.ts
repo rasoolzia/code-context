@@ -3,7 +3,14 @@ export function generatePathList(paths: readonly string[]): string {
     ...new Set(paths.map((path) => path.replace(/\\/g, "/"))),
   ];
 
-  return normalizedPaths.sort(compareText).join("\n");
+  return [
+    "# Export Paths",
+    "",
+    "```text",
+    ...normalizedPaths.sort(compareText),
+    "```",
+    "",
+  ].join("\n");
 }
 
 function compareText(left: string, right: string): number {

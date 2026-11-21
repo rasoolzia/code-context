@@ -125,15 +125,71 @@ export async function getChangedGitFiles(
 
 export async function collectChangedGitRepositories(
   workspacePaths: readonly string[],
+  selectedResourcePaths: readonly string[] = [],
 ): Promise<ChangedGitRepository[]> {
   const repositories = await findGitRepositories(workspacePaths);
   const results: ChangedGitRepository[] = [];
 
   for (const repository of repositories) {
-    results.push({ repository, files: await getChangedGitFiles(repository) });
+    const changedFiles = await getChangedGitFiles(repository);
+    const files =
+      selectedResourcePaths.length > 0
+        ? changedFiles.filter((changedFile) =>
+            isSelectedGitChange(
+              repository.root,
+              changedFile,
+              selectedResourcePaths,
+            ),
+          )
+        : changedFiles;
+
+    results.push({ repository, files });
   }
 
   return results;
+}
+
+function isSelectedGitChange(
+  repositoryRoot: string,
+  change: ChangedGitFile,
+  selectedResourcePaths: readonly string[],
+): boolean {
+  return selectedResourcePaths.some((selectedPath) => {
+    const relativeSelection = path.relative(
+      repositoryRoot,
+      path.resolve(selectedPath),
+    );
+
+    if (
+      relativeSelection === ".." ||
+      relativeSelection.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativeSelection)
+    ) {
+      return false;
+    }
+
+    let selection = normalizeGitPath(relativeSelection).replace(/\/$/, "");
+
+    if (!selection || selection === ".") {
+      return true;
+    }
+
+    let selectionPathKey = selection;
+    let changedPaths = [change.path, change.oldPath].filter(
+      (filePath): filePath is string => filePath !== undefined,
+    );
+
+    if (process.platform === "win32") {
+      selectionPathKey = selectionPathKey.toLowerCase();
+      changedPaths = changedPaths.map((filePath) => filePath.toLowerCase());
+    }
+
+    return changedPaths.some(
+      (filePath) =>
+        filePath === selectionPathKey ||
+        filePath.startsWith(`${selectionPathKey}/`),
+    );
+  });
 }
 
 export async function getGitDiff(
@@ -144,6 +200,13 @@ export async function getGitDiff(
   let trackedDiff = "";
 
   if (trackedChanges.length > 0) {
+    const changedPathspecs = [
+      ...new Set(
+        trackedChanges.flatMap((change) =>
+          change.oldPath ? [change.oldPath, change.path] : [change.path],
+        ),
+      ),
+    ];
     const hasHead =
       (await runGit(
         repository.root,
@@ -159,6 +222,7 @@ export async function getGitDiff(
           "--no-color",
           "--find-renames",
           "--",
+          ...changedPathspecs,
         ]
       : [
           "diff",
@@ -168,6 +232,7 @@ export async function getGitDiff(
           "--no-color",
           "--find-renames",
           "--",
+          ...changedPathspecs,
         ];
     trackedDiff = await runGitRequired(repository.root, diffArgs);
 
@@ -179,6 +244,7 @@ export async function getGitDiff(
         "--no-color",
         "--find-renames",
         "--",
+        ...changedPathspecs,
       ]);
       trackedDiff = [trackedDiff, unstagedDiff].filter(Boolean).join("\n");
     }

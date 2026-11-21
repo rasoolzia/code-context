@@ -70,6 +70,16 @@
           "command": "code-context.exportPaths",
           "group": "codecontext@3",
           "when": "resourceScheme == file"
+        },
+        {
+          "command": "code-context.gitDiff",
+          "group": "codecontext@4",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "code-context.beforeAfterGitContext",
+          "group": "codecontext@5",
+          "when": "resourceScheme == file"
         }
       ]
     }

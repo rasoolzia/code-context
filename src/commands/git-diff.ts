@@ -8,7 +8,7 @@ import {
 } from "../infrastructure/git/git-client";
 import { openExportDocument } from "../infrastructure/vscode/open-export-document";
 
-export async function exportGitDiff(): Promise<void> {
+export async function exportGitDiff(...resources: vscode.Uri[]): Promise<void> {
   const workspacePaths =
     vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [];
 
@@ -20,7 +20,10 @@ export async function exportGitDiff(): Promise<void> {
   }
 
   try {
-    const repositories = await collectChangedGitRepositories(workspacePaths);
+    const repositories = await collectChangedGitRepositories(
+      workspacePaths,
+      resources.map((resource) => resource.fsPath),
+    );
     const diffs: string[] = [];
 
     for (const result of repositories) {

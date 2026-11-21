@@ -43,7 +43,7 @@ export function generateBeforeAfterGitContext(
 }
 
 export function generateGitDiffOutput(diff: string): string {
-  return diff;
+  return `# Git Diff\n\n${diff}`;
 }
 
 function fencedContent(content: string, language: string): string {

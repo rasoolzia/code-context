@@ -4,9 +4,11 @@
 
 Export Git changes as a patch containing change metadata and changed hunks, including Git's normal nearby context lines. Complete unchanged files are never included. The result opens as an editable untitled plain-text document; it is not written to the workspace automatically.
 
+The output begins with `# Git Diff`, followed by the existing Git patch unchanged and without an enclosing code fence.
+
 ## Command and Workflow
 
-Run **CodeContext: Git Diff** from the Command Palette. The command inspects Git repositories containing the open workspace folders and opens one combined diff document. If no workspace is open, no repository is found, or no changes exist, CodeContext reports that state instead of opening an empty export.
+Run **CodeContext: Git Diff** from the Command Palette to inspect all Git repositories containing open workspace folders. From an Explorer context menu, select one or more files or folders to scope the diff to changes at those paths. Folder selections include changed descendants; overlapping selections are deduplicated. Without a selection, the command remains workspace-wide. The result opens as an editable untitled plain-text document. If no workspace is open, no repository is found, or no relevant changes exist, CodeContext reports that state instead of opening an empty export.
 
 ## Change Coverage
 

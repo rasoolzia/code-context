@@ -57,13 +57,24 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand("code-context.gitDiff", exportGitDiff),
+    vscode.commands.registerCommand(
+      "code-context.gitDiff",
+      async (resource: unknown, selectedResources: unknown) => {
+        await exportGitDiff(
+          ...getCommandResources(resource, selectedResources),
+        );
+      },
+    ),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "code-context.beforeAfterGitContext",
-      exportBeforeAfterGitContext,
+      async (resource: unknown, selectedResources: unknown) => {
+        await exportBeforeAfterGitContext(
+          ...getCommandResources(resource, selectedResources),
+        );
+      },
     ),
   );
 }

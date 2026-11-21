@@ -6,7 +6,7 @@ Export complete file contents from before and after Git changes for use as AI co
 
 ## Command and Workflow
 
-Run **CodeContext: Before/After Git Context** from the Command Palette. CodeContext detects Git repositories containing open workspace folders, gathers changed files, and opens one deterministic Markdown document. No workspace, non-Git workspaces, Git errors, and no-change states are reported clearly.
+Run **CodeContext: Before/After Git Context** from the Command Palette to include changes from all Git repositories containing open workspace folders. From an Explorer context menu, select one or more files or folders to scope the context to changed paths beneath that selection. Overlapping selections are deduplicated, and a selected unchanged file contributes no section. Without a selection, the command remains workspace-wide. The result opens as an editable untitled Markdown document. No workspace, non-Git workspaces, Git errors, and no relevant changes are reported clearly.
 
 ## Before and After
 

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Export a plain list of file paths without file contents, Markdown headings, bullets, or tree formatting. The output opens in a native untitled plain-text document and can be edited or saved with Ctrl+S or Save As; it is not written to the workspace automatically.
+Export a plain list of file paths without file contents, bullets, or tree formatting. The output opens in a native untitled plain-text document and can be edited or saved with Ctrl+S or Save As; it is not written to the workspace automatically.
 
 ## Supported Selections
 
@@ -18,12 +18,16 @@ Folder traversal skips `node_modules`, `.git`, `dist`, `out`, `.next`, `.nuxt`, 
 
 ## Output Format
 
-The plain-text document contains only file paths, for example:
+The plain-text document contains a `# Export Paths` heading and a fenced `text` block containing one path per line, for example:
+
+````markdown
+# Export Paths
 
 ```text
 src/app/page.tsx
 src/components/Button.tsx
 src/lib/utils.ts
 ```
+````
 
 No file contents are read or included.

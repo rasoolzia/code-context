@@ -26,6 +26,7 @@ import type { FilesystemEntry } from "../core/models/filesystem-entry";
 import { generatePathList } from "../core/path-list-generator";
 import { parsePathList } from "../core/paths/path-list-parser";
 import {
+  collectChangedGitRepositories,
   findGitRepositories,
   getChangedGitFiles,
   getGitDiff,
@@ -434,9 +435,14 @@ suite("Export Content", () => {
   test("generates a deterministic normalized path list", () => {
     assert.strictEqual(
       generatePathList(["src\\z.ts", "src/a.ts", "src/a.ts"]),
-      "src/a.ts\nsrc/z.ts",
+      ["# Export Paths", "", "```text", "src/a.ts", "src/z.ts", "```", ""].join(
+        "\n",
+      ),
     );
-    assert.strictEqual(generatePathList([]), "");
+    assert.strictEqual(
+      generatePathList([]),
+      ["# Export Paths", "", "```text", "```", ""].join("\n"),
+    );
   });
 
   test("accepts an empty file without a fence before a non-empty file", () => {
@@ -748,6 +754,129 @@ suite("Export Content", () => {
 });
 
 suite("Git Context", () => {
+  test("scopes changed files to selected files and folders without duplicates", async () => {
+    await withTemporaryGitRepository(
+      {
+        "src/a.ts": "a before\n",
+        "src/nested/b.ts": "b before\n",
+        "src/nested/unchanged.ts": "unchanged\n",
+        "other.ts": "other before\n",
+      },
+      async (root) => {
+        await writeDiskFile(path.join(root, "src/a.ts"), "a after\n");
+        await writeDiskFile(path.join(root, "src/nested/b.ts"), "b after\n");
+        await writeDiskFile(path.join(root, "other.ts"), "other after\n");
+        await writeDiskFile(path.join(root, "src/nested/new.ts"), "new file\n");
+
+        const allChanges = await collectChangedGitRepositories([root]);
+        assert.deepStrictEqual(
+          allChanges[0].files.map((change) => change.path),
+          ["other.ts", "src/a.ts", "src/nested/b.ts", "src/nested/new.ts"],
+        );
+
+        const selectedFile = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "src", "a.ts")],
+        );
+        assert.deepStrictEqual(
+          selectedFile[0].files.map((change) => change.path),
+          ["src/a.ts"],
+        );
+        const selectedDiff = await getGitDiff(
+          selectedFile[0].repository,
+          selectedFile[0].files,
+        );
+        assert.ok(selectedDiff.includes("+a after"));
+        assert.ok(!selectedDiff.includes("other after"));
+
+        const selectedFiles = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "src", "a.ts"), path.join(root, "other.ts")],
+        );
+        assert.deepStrictEqual(
+          selectedFiles[0].files.map((change) => change.path),
+          ["other.ts", "src/a.ts"],
+        );
+
+        const selectedFolder = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "src", "nested")],
+        );
+        assert.deepStrictEqual(
+          selectedFolder[0].files.map((change) => change.path),
+          ["src/nested/b.ts", "src/nested/new.ts"],
+        );
+
+        const overlapping = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "src"), path.join(root, "src", "a.ts")],
+        );
+        assert.deepStrictEqual(
+          overlapping[0].files.map((change) => change.path),
+          ["src/a.ts", "src/nested/b.ts", "src/nested/new.ts"],
+        );
+
+        const selectedChangedAndUnchanged = await collectChangedGitRepositories(
+          [root],
+          [
+            path.join(root, "src", "a.ts"),
+            path.join(root, "src", "nested", "unchanged.ts"),
+          ],
+        );
+        assert.deepStrictEqual(
+          selectedChangedAndUnchanged[0].files.map((change) => change.path),
+          ["src/a.ts"],
+        );
+
+        const selectedNoChange = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "src", "nested", "unchanged.ts")],
+        );
+        assert.deepStrictEqual(selectedNoChange[0].files, []);
+      },
+    );
+  });
+
+  test("scopes selections across multiple workspace repositories", async () => {
+    await withTemporaryGitRepository(
+      { "first.ts": "first\n" },
+      async (firstRoot) => {
+        await writeDiskFile(
+          path.join(firstRoot, "first.ts"),
+          "first changed\n",
+        );
+
+        await withTemporaryGitRepository(
+          { "second.ts": "second\n" },
+          async (secondRoot) => {
+            await writeDiskFile(
+              path.join(secondRoot, "second.ts"),
+              "second changed\n",
+            );
+
+            const selected = await collectChangedGitRepositories(
+              [firstRoot, secondRoot],
+              [path.join(secondRoot, "second.ts")],
+            );
+
+            assert.deepStrictEqual(
+              selected.find(
+                (repository) => repository.repository.root === firstRoot,
+              )?.files,
+              [],
+            );
+            assert.deepStrictEqual(
+              selected
+                .find((repository) => repository.repository.root === secondRoot)
+                ?.files.map((change) => change.path),
+              ["second.ts"],
+            );
+          },
+        );
+      },
+    );
+  });
+
   test("detects staged and unstaged modifications and exports changes only", async () => {
     await withTemporaryGitRepository(
       {
@@ -838,6 +967,23 @@ suite("Git Context", () => {
 
         assert.strictEqual(rename?.oldPath, "old-name.ts");
         assert.strictEqual(deleted?.status.includes("D"), true);
+
+        const oldPathSelection = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "old-name.ts")],
+        );
+        const newPathSelection = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "new-name.ts")],
+        );
+        assert.deepStrictEqual(
+          oldPathSelection[0].files.map((change) => change.path),
+          ["new-name.ts"],
+        );
+        assert.deepStrictEqual(
+          newPathSelection[0].files.map((change) => change.path),
+          ["new-name.ts"],
+        );
       },
     );
   });
@@ -980,7 +1126,7 @@ suite("Git Context", () => {
     assert.ok(output.indexOf("a.ts") < output.indexOf("z.ts"));
     assert.strictEqual(
       generateGitDiffOutput("diff --git a/a.ts b/a.ts\n+new \n"),
-      "diff --git a/a.ts b/a.ts\n+new \n",
+      "# Git Diff\n\ndiff --git a/a.ts b/a.ts\n+new \n",
     );
   });
 });

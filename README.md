@@ -6,12 +6,12 @@ CodeContext exports, imports, and explores project context from Visual Studio Co
 
 - **Export Content** creates Markdown containing selected source files or the complete workspace.
 - **Export Project Tree** creates a directory tree without file contents.
-- **Export Paths** creates a sorted plain-text list of workspace-relative file paths.
+- **Export Paths** creates a sorted plain-text list of workspace-relative file paths inside a `# Export Paths` text fence.
 - **Import Content** imports CodeContext Markdown after validation and overwrite confirmation.
 - **Import Project Tree** creates directories and empty files without changing existing files.
 - **Import Paths** creates directories and empty files from a newline-separated path list.
-- **Git Diff** exports staged and unstaged changes as a patch, including untracked files as additions.
-- **Before/After Git Context** exports complete `HEAD` and working-tree contents for changed files.
+- **Git Diff** exports staged and unstaged changes as a patch, including untracked files as additions; Explorer selections scope it to selected resources.
+- **Before/After Git Context** exports complete `HEAD` and working-tree contents for changed files; Explorer selections scope it to selected resources.
 
 For example if there is an image subfolder under your extension project workspace:
 
