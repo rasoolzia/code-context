@@ -4,6 +4,7 @@
   "description": "Developer toolkit for exporting, importing, exploring, and sharing project context.",
   "version": "0.0.1",
   "publisher": "rasoolzia",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.138.0"
   },
