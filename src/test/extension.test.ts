@@ -1218,3 +1218,262 @@ async function updateTestWorkspaceFolder(
     }
   });
 }
+
+suite("Generate Context from Paths", () => {
+  const { resolvePathsToUris } = require("../commands/generate-context-from-paths") as typeof import("../commands/generate-context-from-paths");
+
+  let genRoot: vscode.Uri | undefined;
+
+  suiteSetup(async () => {
+    const temporaryPath = await mkdtemp(
+      path.join(tmpdir(), `code-context-gen-${randomUUID()}-`),
+    );
+    genRoot = vscode.Uri.file(temporaryPath);
+    await updateTestWorkspaceFolder(genRoot, true);
+    await vscode.workspace.fs.createDirectory(
+      vscode.Uri.joinPath(genRoot, "src"),
+    );
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.joinPath(genRoot, "src", "a-gen.ts"),
+      new TextEncoder().encode("const a = 1;"),
+    );
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.joinPath(genRoot, "src", "z-gen.ts"),
+      new TextEncoder().encode("const z = 26;"),
+    );
+  });
+
+  suiteTeardown(async () => {
+    if (genRoot) {
+      const temporaryPath = genRoot.fsPath;
+      try {
+        await updateTestWorkspaceFolder(genRoot, false);
+      } finally {
+        genRoot = undefined;
+        await rm(temporaryPath, { recursive: true, force: true });
+      }
+    }
+  });
+
+  function getFolder(): vscode.WorkspaceFolder {
+    const folder = genRoot && vscode.workspace.getWorkspaceFolder(genRoot);
+    assert.ok(folder, "test workspace folder not found");
+    return folder;
+  }
+
+  // ── Path parsing via resolvePathsToUris ───────────────────────────────────
+
+  test("resolves a single path", async () => {
+    const uris = await resolvePathsToUris("src/a-gen.ts", getFolder());
+    assert.strictEqual(uris.length, 1);
+    assert.ok(uris[0].path.endsWith("a-gen.ts"));
+  });
+
+  test("resolves multiple paths", async () => {
+    const uris = await resolvePathsToUris(
+      "src/a-gen.ts\nsrc/z-gen.ts",
+      getFolder(),
+    );
+    assert.strictEqual(uris.length, 2);
+  });
+
+  test("resolves nested paths", async () => {
+    const uris = await resolvePathsToUris("src/a-gen.ts", getFolder());
+    assert.ok(uris[0].path.includes("src"));
+  });
+
+  test("normalizes Windows backslashes", async () => {
+    const uris = await resolvePathsToUris("src\\a-gen.ts", getFolder());
+    assert.strictEqual(uris.length, 1);
+    assert.ok(uris[0].path.endsWith("a-gen.ts"));
+  });
+
+  test("ignores blank lines", async () => {
+    const uris = await resolvePathsToUris(
+      "\nsrc/a-gen.ts\n  \nsrc/z-gen.ts\n",
+      getFolder(),
+    );
+    assert.strictEqual(uris.length, 2);
+  });
+
+  test("deduplicates paths", async () => {
+    const uris = await resolvePathsToUris(
+      "src/a-gen.ts\nsrc/a-gen.ts",
+      getFolder(),
+    );
+    assert.strictEqual(uris.length, 1);
+  });
+
+  test("sorts paths deterministically", async () => {
+    const uris = await resolvePathsToUris(
+      "src/z-gen.ts\nsrc/a-gen.ts",
+      getFolder(),
+    );
+    assert.ok(uris[0].path.endsWith("a-gen.ts"));
+    assert.ok(uris[1].path.endsWith("z-gen.ts"));
+  });
+
+  test("rejects empty input", async () => {
+    await assert.rejects(
+      resolvePathsToUris("   \n  \n", getFolder()),
+      /at least one/i,
+    );
+  });
+
+  test("rejects absolute paths", async () => {
+    await assert.rejects(
+      resolvePathsToUris("/etc/passwd", getFolder()),
+      /relative/i,
+    );
+    await assert.rejects(
+      resolvePathsToUris("C:\\secret.ts", getFolder()),
+      /relative/i,
+    );
+  });
+
+  test("rejects traversal paths", async () => {
+    await assert.rejects(
+      resolvePathsToUris("../outside.ts", getFolder()),
+      /escape/i,
+    );
+  });
+
+  test("rejects a directory path (content mode)", async () => {
+    await assert.rejects(
+      resolvePathsToUris("src", getFolder(), "content"),
+      /directory/i,
+    );
+  });
+
+  test("rejects a directory path (gitDiff mode)", async () => {
+    await assert.rejects(
+      resolvePathsToUris("src", getFolder(), "gitDiff"),
+      /directory/i,
+    );
+  });
+
+  test("rejects a missing path in content mode", async () => {
+    await assert.rejects(
+      resolvePathsToUris("does-not-exist-xyz/file.ts", getFolder(), "content"),
+      /not found/i,
+    );
+  });
+
+  test("allows a missing path in gitDiff mode (deleted file)", async () => {
+    const uris = await resolvePathsToUris(
+      "does-not-exist-xyz/deleted.ts",
+      getFolder(),
+      "gitDiff",
+    );
+    assert.strictEqual(uris.length, 1);
+    assert.ok(uris[0].path.endsWith("deleted.ts"));
+  });
+
+  // ── Content integration ───────────────────────────────────────────────────
+
+  test("content output produces Code Context Markdown via existing generator", async () => {
+    // This exercises the full Generate Context from Paths → Content chain:
+    // resolvePathsToUris (path resolution) → readContextFile (the same reader
+    // exportContent uses) → generateMarkdown. No ContextFile data is
+    // constructed manually; paths and file contents come from disk.
+    const { readContextFile } = require("../infrastructure/vscode/vscode-file-reader") as typeof import("../infrastructure/vscode/vscode-file-reader");
+    const { generateMarkdown } = require("../core/markdown/markdown-generator") as typeof import("../core/markdown/markdown-generator");
+
+    const uris = await resolvePathsToUris(
+      "src/z-gen.ts\nsrc/a-gen.ts",
+      getFolder(),
+      "content",
+    );
+    const files = await Promise.all(uris.map((uri) => readContextFile(uri)));
+    const markdown = generateMarkdown(files);
+
+    assert.ok(markdown.startsWith("# Code Context"));
+    // Paths are present and come from the resolved URIs, not hardcoded strings.
+    assert.ok(markdown.includes("a-gen.ts"));
+    assert.ok(markdown.includes("z-gen.ts"));
+    // generateMarkdown sorts by path; a-gen must precede z-gen.
+    assert.ok(markdown.indexOf("a-gen.ts") < markdown.indexOf("z-gen.ts"));
+    // File contents come from disk, not from the test.
+    assert.ok(markdown.includes("const a = 1;"));
+    assert.ok(markdown.includes("const z = 26;"));
+  });
+
+  // ── Git Diff: deleted file regression ────────────────────────────────────
+
+  test("gitDiff mode includes a deleted tracked file", async () => {
+    await withTemporaryGitRepository(
+      { "src/deleted.ts": "const removed = true;\n", "src/other.ts": "other\n" },
+      async (root) => {
+        await rm(path.join(root, "src", "deleted.ts"));
+        runGitForTest(root, ["add", "-A"]);
+
+        const selected = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "src", "deleted.ts")],
+        );
+        assert.strictEqual(selected[0].files.length, 1);
+        assert.strictEqual(selected[0].files[0].path, "src/deleted.ts");
+
+        const diff = await getGitDiff(
+          selected[0].repository,
+          selected[0].files,
+        );
+        assert.ok(diff.includes("-const removed = true;"));
+        assert.ok(!diff.includes("other"));
+      },
+    );
+  });
+
+  test("gitDiff mode: renamed file is found via old path", async () => {
+    await withTemporaryGitRepository(
+      { "old.ts": "export const v = 1;\n" },
+      async (root) => {
+        await renameDiskFile(
+          path.join(root, "old.ts"),
+          path.join(root, "new.ts"),
+        );
+        runGitForTest(root, ["add", "-A"]);
+
+        // Selecting the old path should surface the rename change
+        const selected = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "old.ts")],
+        );
+        assert.strictEqual(selected[0].files.length, 1);
+        assert.strictEqual(selected[0].files[0].path, "new.ts");
+        assert.strictEqual(selected[0].files[0].oldPath, "old.ts");
+      },
+    );
+  });
+
+  // ── Git Diff integration ──────────────────────────────────────────────────
+
+  test("gitDiff mode scopes diff to requested paths and excludes unrelated files", async () => {
+    await withTemporaryGitRepository(
+      { "src/a.ts": "a before\n", "other.ts": "other before\n" },
+      async (root) => {
+        await writeDiskFile(path.join(root, "src/a.ts"), "a after\n");
+        await writeDiskFile(path.join(root, "other.ts"), "other after\n");
+
+        const selected = await collectChangedGitRepositories(
+          [root],
+          [path.join(root, "src", "a.ts")],
+        );
+        const diff = await getGitDiff(
+          selected[0].repository,
+          selected[0].files,
+        );
+
+        assert.ok(diff.includes("+a after"));
+        assert.ok(!diff.includes("other after"));
+      },
+    );
+  });
+
+  // ── Command registration ──────────────────────────────────────────────────
+
+  test("generateContextFromPaths command is registered", async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes("code-context.generateContextFromPaths"));
+  });
+});

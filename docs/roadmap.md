@@ -11,6 +11,7 @@
 - ✅ Import Paths
 - ✅ Git Diff / Changed Files Context
 - ✅ Before/After Git Context
+- ✅ Generate Context from Paths
 
 ## Planned
 

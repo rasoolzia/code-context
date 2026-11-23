@@ -45,6 +45,11 @@
         "category": "CodeContext"
       },
       {
+        "command": "code-context.generateContextFromPaths",
+        "title": "Generate Context from Paths",
+        "category": "CodeContext"
+      },
+      {
         "command": "code-context.gitDiff",
         "title": "Git Diff",
         "category": "CodeContext"

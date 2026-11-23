@@ -3,6 +3,7 @@ import { exportBeforeAfterGitContext } from "./commands/before-after-git-context
 import { exportContent } from "./commands/export-content";
 import { exportPaths } from "./commands/export-paths";
 import { exportTree } from "./commands/export-tree";
+import { generateContext } from "./commands/generate-context";
 import { exportGitDiff } from "./commands/git-diff";
 import { importContent } from "./commands/import-content";
 import { importPaths } from "./commands/import-paths";
@@ -64,6 +65,13 @@ export function activate(context: vscode.ExtensionContext): void {
           ...getCommandResources(resource, selectedResources),
         );
       },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "code-context.generateContextFromPaths",
+      generateContext,
     ),
   );
 

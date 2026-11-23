@@ -7,6 +7,10 @@ import type { FilesystemEntry } from "../core/models/filesystem-entry";
 import { parsePathList } from "../core/paths/path-list-parser";
 import { writeContextFiles } from "../infrastructure/vscode/context-file-writer";
 import { createFilesystemStructure } from "../infrastructure/vscode/structure-writer";
+import {
+  generateContextFromPaths,
+  type GenerateOutput,
+} from "./generate-context-from-paths";
 
 export type ImportMode = "content" | "tree" | "paths";
 
@@ -14,6 +18,11 @@ type ImportPanelMessage =
   | {
       type: "import";
       mode: ImportMode;
+      input: string;
+    }
+  | {
+      type: "generate";
+      output: GenerateOutput;
       input: string;
     }
   | {
@@ -27,7 +36,9 @@ type PanelStatus =
   | "cancelled"
   | "success";
 
-export function openImportPanel(initialMode: ImportMode): void {
+export type PanelInitialMode = ImportMode | "generate";
+
+export function openImportPanel(initialMode: PanelInitialMode): void {
   const panel = vscode.window.createWebviewPanel(
     "codeContextImport",
     "CodeContext: Import",
@@ -37,32 +48,37 @@ export function openImportPanel(initialMode: ImportMode): void {
   const nonce = randomBytes(18).toString("base64");
   panel.webview.html = getImportPanelHtml(nonce, initialMode);
 
-  let isImporting = false;
+  let isWorking = false;
   panel.webview.onDidReceiveMessage(async (message: ImportPanelMessage) => {
     if (message.type === "close") {
       panel.dispose();
       return;
     }
 
-    if (isImporting || !isImportMode(message.mode)) {
+    if (isWorking) {
       return;
     }
 
-    isImporting = true;
+    isWorking = true;
 
     try {
       await panel.webview.postMessage({ type: "working" });
-      await processImport(panel, message.mode, message.input);
+
+      if (message.type === "generate") {
+        await processGenerate(panel, message.output, message.input);
+      } else if (message.type === "import" && isImportMode(message.mode)) {
+        await processImport(panel, message.mode, message.input);
+      }
     } catch (error) {
       postStatus(
         panel,
         "import-error",
         error instanceof Error
           ? error.message
-          : "An unexpected error occurred while importing.",
+          : "An unexpected error occurred.",
       );
     } finally {
-      isImporting = false;
+      isWorking = false;
     }
   });
 }
@@ -136,6 +152,30 @@ async function processImport(
   );
 }
 
+async function processGenerate(
+  panel: vscode.WebviewPanel,
+  output: GenerateOutput,
+  input: string,
+): Promise<void> {
+  try {
+    const generated = await generateContextFromPaths(input, output);
+
+    if (generated === false) {
+      postStatus(panel, "cancelled", "Cancelled. No context was generated.");
+      return;
+    }
+  } catch (error) {
+    postStatus(
+      panel,
+      "validation-error",
+      error instanceof Error ? error.message : "The input is invalid.",
+    );
+    return;
+  }
+
+  postStatus(panel, "success", "Context generated. See the new document.");
+}
+
 async function chooseWorkspaceFolder(): Promise<
   vscode.WorkspaceFolder | undefined
 > {
@@ -173,14 +213,14 @@ function postStatus(
   void panel.webview.postMessage({ type, message });
 }
 
-function getImportPanelHtml(nonce: string, initialMode: ImportMode): string {
+function getImportPanelHtml(nonce: string, initialMode: PanelInitialMode): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
-  <title>CodeContext Import</title>
+  <title>CodeContext</title>
   <style>
     :root { color-scheme: light dark; }
     body { padding: 0 18px 18px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); }
@@ -193,6 +233,9 @@ function getImportPanelHtml(nonce: string, initialMode: ImportMode): string {
     label { display: block; margin-bottom: 8px; }
     textarea { box-sizing: border-box; display: block; width: 100%; min-height: 55vh; max-height: 72vh; resize: vertical; padding: 12px; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); font: var(--vscode-editor-font-weight) var(--vscode-editor-font-size)/1.5 var(--vscode-editor-font-family); }
     textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+    .output-selector { display: none; margin-top: 12px; }
+    .output-selector.visible { display: block; }
+    .output-selector label { display: block; margin-bottom: 6px; cursor: pointer; color: var(--vscode-foreground); }
     .actions { display: flex; gap: 8px; margin-top: 12px; }
     button { padding: 6px 14px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 0; cursor: pointer; }
     button:hover { background: var(--vscode-button-hoverBackground); }
@@ -204,17 +247,22 @@ function getImportPanelHtml(nonce: string, initialMode: ImportMode): string {
 </head>
 <body>
   <main>
-    <h1>CodeContext Import</h1>
-    <div class="tabs" role="tablist" aria-label="Import type">
-      <button class="tab" id="tab-content" role="tab" type="button" data-mode="content">Import Content</button>
-      <button class="tab" id="tab-tree" role="tab" type="button" data-mode="tree">Import Project Tree</button>
-      <button class="tab" id="tab-paths" role="tab" type="button" data-mode="paths">Import Paths</button>
+    <h1>CodeContext</h1>
+    <div class="tabs" role="tablist" aria-label="Mode">
+      <button class="tab" role="tab" type="button" data-mode="generate">Generate Context</button>
+      <button class="tab" role="tab" type="button" data-mode="content">Import Content</button>
+      <button class="tab" role="tab" type="button" data-mode="tree">Import Project Tree</button>
+      <button class="tab" role="tab" type="button" data-mode="paths">Import Paths</button>
     </div>
     <p id="help"></p>
     <label id="input-label" for="input"></label>
     <textarea id="input" spellcheck="false"></textarea>
+    <div class="output-selector" id="output-selector" role="group" aria-label="Output type">
+      <label><input type="radio" name="output" value="content" checked> Content</label>
+      <label><input type="radio" name="output" value="gitDiff"> Git Diff</label>
+    </div>
     <div class="actions">
-      <button id="import" type="button">Import</button>
+      <button id="action" type="button"></button>
       <button id="close" class="secondary" type="button">Cancel / Close</button>
     </div>
     <div id="status" role="status" aria-live="polite"></div>
@@ -224,13 +272,15 @@ function getImportPanelHtml(nonce: string, initialMode: ImportMode): string {
     const input = document.getElementById('input');
     const help = document.getElementById('help');
     const label = document.getElementById('input-label');
-    const importButton = document.getElementById('import');
+    const actionButton = document.getElementById('action');
     const closeButton = document.getElementById('close');
     const status = document.getElementById('status');
+    const outputSelector = document.getElementById('output-selector');
     const modes = {
       content: { help: 'Paste CodeContext Markdown here.', label: 'CodeContext Markdown', placeholder: '# Code Context\\n\\n## Files\\n\\n### src/example.ts\\n\\n' + String.fromCharCode(96).repeat(3) + 'typescript\\nPaste the complete export here\\n' + String.fromCharCode(96).repeat(3), action: 'Import Content' },
       tree: { help: 'Paste a project tree here.', label: 'Project Tree', placeholder: 'src/\\n├── app/\\n│   └── page.tsx', action: 'Import Project Tree' },
-      paths: { help: 'Paste one relative file path per line.', label: 'File Paths', placeholder: 'src/app/page.tsx\\nsrc/components/Button.tsx', action: 'Import Paths' }
+      paths: { help: 'Paste one relative file path per line.', label: 'File Paths', placeholder: 'src/app/page.tsx\\nsrc/components/Button.tsx', action: 'Import Paths' },
+      generate: { help: 'Paste workspace-relative file paths and choose the output to generate.', label: 'File Paths', placeholder: 'src/components/Button.tsx\\nsrc/lib/utils.ts', action: 'Generate Context' }
     };
     let activeMode = '${initialMode}';
     function selectMode(mode) {
@@ -238,10 +288,12 @@ function getImportPanelHtml(nonce: string, initialMode: ImportMode): string {
       document.querySelectorAll('.tab').forEach(tab => {
         tab.setAttribute('aria-selected', String(tab.dataset.mode === mode));
       });
-      help.textContent = modes[mode].help;
-      label.textContent = modes[mode].label;
-      input.placeholder = modes[mode].placeholder;
-      importButton.textContent = modes[mode].action;
+      const cfg = modes[mode];
+      help.textContent = cfg.help;
+      label.textContent = cfg.label;
+      input.placeholder = cfg.placeholder;
+      actionButton.textContent = cfg.action;
+      outputSelector.classList.toggle('visible', mode === 'generate');
       status.textContent = '';
       status.dataset.state = '';
     }
@@ -249,25 +301,30 @@ function getImportPanelHtml(nonce: string, initialMode: ImportMode): string {
       tab.addEventListener('click', () => selectMode(tab.dataset.mode));
     });
     selectMode(activeMode);
-    importButton.addEventListener('click', () => {
+    actionButton.addEventListener('click', () => {
       status.dataset.state = 'working';
-      status.textContent = 'Validating input...';
-      importButton.disabled = true;
+      status.textContent = 'Working...';
+      actionButton.disabled = true;
       closeButton.disabled = true;
-      vscode.postMessage({ type: 'import', mode: activeMode, input: input.value });
+      if (activeMode === 'generate') {
+        const output = document.querySelector('input[name="output"]:checked').value;
+        vscode.postMessage({ type: 'generate', output, input: input.value });
+      } else {
+        vscode.postMessage({ type: 'import', mode: activeMode, input: input.value });
+      }
     });
     closeButton.addEventListener('click', () => vscode.postMessage({ type: 'close' }));
     window.addEventListener('message', event => {
       const message = event.data;
-      status.textContent = message.type === 'working' ? 'Validating input...' : message.message || '';
+      status.textContent = message.type === 'working' ? 'Working...' : message.message || '';
       status.dataset.state = message.type || '';
       if (message.type === 'success') {
-        input.disabled = true;
+        if (activeMode !== 'generate') { input.disabled = true; }
         closeButton.disabled = false;
         closeButton.textContent = 'Close';
         window.setTimeout(() => vscode.postMessage({ type: 'close' }), 1200);
       } else {
-        importButton.disabled = false;
+        actionButton.disabled = false;
         closeButton.disabled = false;
       }
     });

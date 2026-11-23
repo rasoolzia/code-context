@@ -79,6 +79,17 @@ Existing files are preserved.
 
 [Read the Import Paths documentation](docs/features/import-paths.md)
 
+### Generate Context from Paths
+
+Paste a list of workspace-relative file paths and choose what kind of context to generate:
+
+- **Content** — produces the same `# Code Context` Markdown as Export Content
+- **Git Diff** — produces the same `# Git Diff` output as Git Diff, scoped to the provided paths
+
+Useful when you already know which files are relevant and want to generate context without navigating the Explorer.
+
+[Read the Generate Context from Paths documentation](docs/features/generate-context-from-paths.md)
+
 ### Git Diff
 
 Export the current Git changes as a patch.
@@ -159,6 +170,7 @@ Import commands open the shared CodeContext Import panel:
 - **CodeContext: Import Content**
 - **CodeContext: Import Project Tree**
 - **CodeContext: Import Paths**
+- **CodeContext: Generate Context from Paths**
 
 ### Typical AI workflow
 
@@ -212,6 +224,7 @@ Detailed feature documentation is available in the [`docs/features`](docs/featur
 - [Import Paths](docs/features/import-paths.md)
 - [Git Diff](docs/features/git-diff.md)
 - [Before/After Git Context](docs/features/before-after-git-context.md)
+- [Generate Context from Paths](docs/features/generate-context-from-paths.md)
 
 Architecture and development decisions are documented in:
 
