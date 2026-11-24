@@ -25,6 +25,10 @@ import { parseProjectTree } from "../core/markdown/project-tree-parser";
 import type { FilesystemEntry } from "../core/models/filesystem-entry";
 import { generatePathList } from "../core/path-list-generator";
 import { parsePathList } from "../core/paths/path-list-parser";
+import { generateRouteReport } from "../core/routes/route-report-generator";
+import type { FilesystemReader } from "../core/routes/route-scanner";
+import { nextRouteScanner } from "../core/routes/scanners/next-route-scanner";
+import { nuxtRouteScanner } from "../core/routes/scanners/nuxt-route-scanner";
 import {
   collectChangedGitRepositories,
   findGitRepositories,
@@ -1219,8 +1223,530 @@ async function updateTestWorkspaceFolder(
   });
 }
 
+// ── Route Report ─────────────────────────────────────────────────────────────
+
+/**
+ * In-memory FilesystemReader for route scanner unit tests.
+ * `structure` maps directory paths to arrays of child names.
+ * Names ending with `/` are treated as directories; others as files.
+ * `existingFiles` lists additional file paths that fileExists should return true for.
+ */
+function makeFs(
+  structure: Record<string, string[]>,
+  existingFiles: string[] = [],
+  fileContents: Record<string, string> = {},
+): FilesystemReader {
+  const fileSet = new Set<string>(existingFiles);
+  const contentMap = new Map(Object.entries(fileContents));
+  const dirMap = new Map<string, { name: string; isDirectory: boolean }[]>();
+
+  for (const [dir, children] of Object.entries(structure)) {
+    dirMap.set(
+      dir,
+      children.map((child) => ({
+        name: child.endsWith("/") ? child.slice(0, -1) : child,
+        isDirectory: child.endsWith("/"),
+      })),
+    );
+
+    for (const child of children) {
+      if (!child.endsWith("/")) {
+        fileSet.add(`${dir}/${child}`);
+      }
+    }
+  }
+
+  return {
+    async readDirectory(directoryPath) {
+      return dirMap.get(directoryPath) ?? undefined;
+    },
+    async readFile(filePath) {
+      return contentMap.get(filePath);
+    },
+    async fileExists(filePath) {
+      return fileSet.has(filePath);
+    },
+  };
+}
+
+suite("Route Report — Next.js scanner", () => {
+  const root = "/workspace";
+
+  function nextFs(structure: Record<string, string[]>, files: string[] = []) {
+    return makeFs(structure, [`${root}/package.json`, ...files], {
+      [`${root}/package.json`]: JSON.stringify({
+        dependencies: { next: "^14.0.0" },
+      }),
+    });
+  }
+
+  test("App Router: root route from app/page.tsx", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/");
+    assert.strictEqual(routes[0].source, "app/page.tsx");
+    assert.strictEqual(routes[0].type, "static");
+  });
+
+  test("App Router: static nested route", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["about/"],
+      [`${root}/app/about`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/about");
+    assert.strictEqual(routes[0].source, "app/about/page.tsx");
+    assert.strictEqual(routes[0].type, "static");
+  });
+
+  test("App Router: dynamic segment [id]", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["users/"],
+      [`${root}/app/users`]: ["[id]/"],
+      [`${root}/app/users/[id]`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/users/[id]");
+    assert.strictEqual(routes[0].source, "app/users/[id]/page.tsx");
+    assert.strictEqual(routes[0].type, "dynamic");
+  });
+
+  test("App Router: catch-all [...slug]", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["docs/"],
+      [`${root}/app/docs`]: ["[...slug]/"],
+      [`${root}/app/docs/[...slug]`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/docs/[...slug]");
+    assert.strictEqual(routes[0].type, "catch-all");
+  });
+
+  test("App Router: optional catch-all [[...slug]]", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["shop/"],
+      [`${root}/app/shop`]: ["[[...slug]]/"],
+      [`${root}/app/shop/[[...slug]]`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/shop/[[...slug]]");
+    assert.strictEqual(routes[0].type, "optional-catch-all");
+  });
+
+  test("App Router: route group (marketing) is transparent to URL", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["(marketing)/"],
+      [`${root}/app/(marketing)`]: ["about/"],
+      [`${root}/app/(marketing)/about`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/about");
+    assert.strictEqual(routes[0].source, "app/(marketing)/about/page.tsx");
+  });
+
+  test("App Router: private folder _components is excluded from routing", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["_components/", "page.tsx"],
+      [`${root}/app/_components`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/");
+  });
+
+  test("App Router: non-route files (layout, loading, error) are ignored", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["layout.tsx", "loading.tsx", "page.tsx", "error.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/");
+  });
+
+  test("App Router: multiple routes are sorted deterministically", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["page.tsx", "about/", "users/"],
+      [`${root}/app/about`]: ["page.tsx"],
+      [`${root}/app/users`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.deepStrictEqual(
+      routes.map((r) => r.route),
+      ["/", "/about", "/users"],
+    );
+  });
+
+  test("App Router: no route files returns empty array", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["layout.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 0);
+  });
+
+  test("App Router: all supported page extensions are recognised", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: ["a/", "b/", "c/", "d/", "e/"],
+      [`${root}/app/a`]: ["page.tsx"],
+      [`${root}/app/b`]: ["page.ts"],
+      [`${root}/app/c`]: ["page.jsx"],
+      [`${root}/app/d`]: ["page.js"],
+      [`${root}/app/e`]: ["page.mdx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 5);
+  });
+
+  test("Pages Router: index.tsx maps to /", async () => {
+    const fs = nextFs({
+      [`${root}/pages`]: ["index.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/");
+    assert.strictEqual(routes[0].source, "pages/index.tsx");
+  });
+
+  test("Pages Router: about.tsx maps to /about", async () => {
+    const fs = nextFs({
+      [`${root}/pages`]: ["about.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes[0].route, "/about");
+  });
+
+  test("Pages Router: nested [id].tsx maps to /users/[id]", async () => {
+    const fs = nextFs({
+      [`${root}/pages`]: ["users/"],
+      [`${root}/pages/users`]: ["[id].tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes[0].route, "/users/[id]");
+    assert.strictEqual(routes[0].source, "pages/users/[id].tsx");
+    assert.strictEqual(routes[0].type, "dynamic");
+  });
+
+  test("Pages Router: _app and _document are ignored", async () => {
+    const fs = nextFs({
+      [`${root}/pages`]: ["_app.tsx", "_document.tsx", "index.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/");
+  });
+
+  test("Pages Router: non-.tsx/.ts/.jsx/.js files are ignored", async () => {
+    const fs = nextFs({
+      [`${root}/pages`]: ["index.tsx", "styles.css", "README.md"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+  });
+});
+
+suite("Route Report — Nuxt scanner", () => {
+  const root = "/workspace";
+
+  function nuxtFs(structure: Record<string, string[]>) {
+    return makeFs(structure, [`${root}/package.json`], {
+      [`${root}/package.json`]: JSON.stringify({
+        dependencies: { nuxt: "^3.0.0" },
+      }),
+    });
+  }
+
+  test("pages/index.vue maps to /", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["index.vue"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+    assert.strictEqual(routes[0].route, "/");
+    assert.strictEqual(routes[0].source, "pages/index.vue");
+    assert.strictEqual(routes[0].type, "static");
+  });
+
+  test("pages/about.vue maps to /about", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["about.vue"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes[0].route, "/about");
+    assert.strictEqual(routes[0].type, "static");
+  });
+
+  test("pages/users/index.vue maps to /users", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["users/"],
+      [`${root}/pages/users`]: ["index.vue"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes[0].route, "/users");
+  });
+
+  test("pages/users/[id].vue maps to /users/[id]", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["users/"],
+      [`${root}/pages/users`]: ["[id].vue"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes[0].route, "/users/[id]");
+    assert.strictEqual(routes[0].source, "pages/users/[id].vue");
+    assert.strictEqual(routes[0].type, "dynamic");
+  });
+
+  test("pages/docs/[...slug].vue maps to /docs/[...slug]", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["docs/"],
+      [`${root}/pages/docs`]: ["[...slug].vue"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes[0].route, "/docs/[...slug]");
+    assert.strictEqual(routes[0].type, "catch-all");
+  });
+
+  test("non-.vue files are ignored", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["index.vue", "styles.css", "utils.ts"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 1);
+  });
+
+  test("multiple routes are sorted deterministically", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["index.vue", "about.vue", "users/"],
+      [`${root}/pages/users`]: ["index.vue", "[id].vue"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.deepStrictEqual(
+      routes.map((r) => r.route),
+      ["/", "/about", "/users", "/users/[id]"],
+    );
+  });
+
+  test("no route files returns empty array", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["utils.ts"],
+    });
+    const routes = await nuxtRouteScanner.scan(root, fs);
+
+    assert.strictEqual(routes.length, 0);
+  });
+});
+
+suite("Route Report — detection", () => {
+  test("Next.js is not detected without package.json", async () => {
+    const root = "/workspace";
+    const fs = makeFs({ [`${root}/app`]: ["page.tsx"] });
+    const detected = await nextRouteScanner.detect(root, fs);
+
+    assert.strictEqual(detected, false);
+  });
+
+  test("Nuxt is not detected without package.json", async () => {
+    const root = "/workspace";
+    const fs = makeFs({ [`${root}/pages`]: ["index.vue"] });
+    const detected = await nuxtRouteScanner.detect(root, fs);
+
+    assert.strictEqual(detected, false);
+  });
+
+  test("Next.js is detected from injected package.json and app directory", async () => {
+    const root = "/workspace";
+    const pkgPath = `${root}/package.json`;
+    const fs = makeFs({ [`${root}/app`]: ["page.tsx"] }, [pkgPath], {
+      [pkgPath]: JSON.stringify({ dependencies: { next: "^14.0.0" } }),
+    });
+
+    assert.strictEqual(await nextRouteScanner.detect(root, fs), true);
+  });
+
+  test("Nuxt is detected from injected package.json and pages directory", async () => {
+    const root = "/workspace";
+    const pkgPath = `${root}/package.json`;
+    const fs = makeFs({ [`${root}/pages`]: ["index.vue"] }, [pkgPath], {
+      [pkgPath]: JSON.stringify({ dependencies: { nuxt: "^3.0.0" } }),
+    });
+
+    assert.strictEqual(await nuxtRouteScanner.detect(root, fs), true);
+  });
+
+  test("projects without framework dependencies are not detected", async () => {
+    const root = "/workspace";
+    const pkgPath = `${root}/package.json`;
+    const fs = makeFs(
+      {
+        [`${root}/app`]: ["page.tsx"],
+        [`${root}/pages`]: ["index.vue"],
+      },
+      [pkgPath],
+      { [pkgPath]: JSON.stringify({ dependencies: { react: "^18.0.0" } }) },
+    );
+
+    assert.strictEqual(await nextRouteScanner.detect(root, fs), false);
+    assert.strictEqual(await nuxtRouteScanner.detect(root, fs), false);
+  });
+});
+
+suite("Route Report — report generator", () => {
+  test("generates a Markdown report with framework and route table", () => {
+    const report = generateRouteReport("Next.js", [
+      { route: "/", source: "app/page.tsx", type: "static" },
+      {
+        route: "/users/[id]",
+        source: "app/users/[id]/page.tsx",
+        type: "dynamic",
+      },
+    ]);
+
+    assert.ok(report.startsWith("# Route Report"));
+    assert.ok(report.includes("## Framework"));
+    assert.ok(report.includes("Next.js"));
+    assert.ok(report.includes("## Routes"));
+    assert.ok(report.includes("`/`"));
+    assert.ok(report.includes("`/users/[id]`"));
+    assert.ok(report.includes("Static"));
+    assert.ok(report.includes("Dynamic"));
+  });
+
+  test("empty routes produces no-routes message", () => {
+    const report = generateRouteReport("Next.js", []);
+
+    assert.ok(report.includes("*No routes found.*"));
+  });
+
+  test("report is deterministic for the same input", () => {
+    const routes = [
+      {
+        route: "/about",
+        source: "app/about/page.tsx",
+        type: "static" as const,
+      },
+      { route: "/", source: "app/page.tsx", type: "static" as const },
+    ];
+
+    assert.strictEqual(
+      generateRouteReport("Next.js", routes),
+      generateRouteReport("Next.js", routes),
+    );
+  });
+
+  test("pipe characters in route paths are escaped", () => {
+    const report = generateRouteReport("Next.js", [
+      { route: "/a|b", source: "app/a|b/page.tsx", type: "static" },
+    ]);
+
+    assert.ok(report.includes("\\|"));
+  });
+
+  test("all route types are labelled correctly", () => {
+    const report = generateRouteReport("Next.js", [
+      { route: "/a", source: "app/a/page.tsx", type: "static" },
+      { route: "/b/[id]", source: "app/b/[id]/page.tsx", type: "dynamic" },
+      {
+        route: "/c/[...s]",
+        source: "app/c/[...s]/page.tsx",
+        type: "catch-all",
+      },
+      {
+        route: "/d/[[...s]]",
+        source: "app/d/[[...s]]/page.tsx",
+        type: "optional-catch-all",
+      },
+    ]);
+
+    assert.ok(report.includes("Static"));
+    assert.ok(report.includes("Dynamic"));
+    assert.ok(report.includes("Catch-all"));
+    assert.ok(report.includes("Optional catch-all"));
+  });
+});
+
+suite("Route Report — integration (scanner → model → report)", () => {
+  test("Next.js App Router full scan produces correct Markdown report", async () => {
+    const root = "/workspace";
+    const fs = makeFs(
+      {
+        [`${root}/app`]: ["page.tsx", "about/", "users/"],
+        [`${root}/app/about`]: ["page.tsx"],
+        [`${root}/app/users`]: ["[id]/"],
+        [`${root}/app/users/[id]`]: ["page.tsx"],
+      },
+      [`${root}/package.json`],
+    );
+
+    const routes = await nextRouteScanner.scan(root, fs);
+    const report = generateRouteReport(nextRouteScanner.frameworkName, routes);
+
+    assert.ok(report.includes("Next.js"));
+    assert.ok(report.includes("`/`"));
+    assert.ok(report.includes("`/about`"));
+    assert.ok(report.includes("`/users/[id]`"));
+    assert.ok(report.includes("Dynamic"));
+    assert.ok(report.indexOf("`/`") < report.indexOf("`/about`"));
+    assert.ok(report.indexOf("`/about`") < report.indexOf("`/users/[id]`"));
+  });
+
+  test("Nuxt full scan produces correct Markdown report", async () => {
+    const root = "/workspace";
+    const fs = makeFs(
+      {
+        [`${root}/pages`]: ["index.vue", "about.vue", "users/"],
+        [`${root}/pages/users`]: ["[id].vue"],
+      },
+      [`${root}/package.json`],
+    );
+
+    const routes = await nuxtRouteScanner.scan(root, fs);
+    const report = generateRouteReport(nuxtRouteScanner.frameworkName, routes);
+
+    assert.ok(report.includes("Nuxt"));
+    assert.ok(report.includes("`/`"));
+    assert.ok(report.includes("`/about`"));
+    assert.ok(report.includes("`/users/[id]`"));
+  });
+
+  test("routeReport command is registered", async () => {
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes("code-context.routeReport"));
+  });
+});
+
 suite("Generate Context from Paths", () => {
-  const { resolvePathsToUris } = require("../commands/generate-context-from-paths") as typeof import("../commands/generate-context-from-paths");
+  const { resolvePathsToUris } =
+    require("../commands/generate-context-from-paths") as typeof import("../commands/generate-context-from-paths");
 
   let genRoot: vscode.Uri | undefined;
 
@@ -1372,28 +1898,37 @@ suite("Generate Context from Paths", () => {
   // ── Content integration ───────────────────────────────────────────────────
 
   test("content output produces Code Context Markdown via existing generator", async () => {
-    // This exercises the full Generate Context from Paths → Content chain:
-    // resolvePathsToUris (path resolution) → readContextFile (the same reader
-    // exportContent uses) → generateMarkdown. No ContextFile data is
-    // constructed manually; paths and file contents come from disk.
-    const { readContextFile } = require("../infrastructure/vscode/vscode-file-reader") as typeof import("../infrastructure/vscode/vscode-file-reader");
-    const { generateMarkdown } = require("../core/markdown/markdown-generator") as typeof import("../core/markdown/markdown-generator");
+    const { generateContextFromPaths } =
+      require("../commands/generate-context-from-paths") as typeof import("../commands/generate-context-from-paths");
+    const openedDocuments: vscode.TextDocument[] = [];
+    const subscription = vscode.workspace.onDidOpenTextDocument((document) => {
+      openedDocuments.push(document);
+    });
 
-    const uris = await resolvePathsToUris(
-      "src/z-gen.ts\nsrc/a-gen.ts",
-      getFolder(),
-      "content",
+    let generated: boolean;
+
+    try {
+      generated = await generateContextFromPaths(
+        "src/z-gen.ts\nsrc/a-gen.ts",
+        "content",
+      );
+    } finally {
+      subscription.dispose();
+    }
+
+    assert.strictEqual(generated, true);
+    const document = openedDocuments.find(
+      (openedDocument) =>
+        openedDocument.languageId === "markdown" &&
+        openedDocument.getText().startsWith("# Code Context"),
     );
-    const files = await Promise.all(uris.map((uri) => readContextFile(uri)));
-    const markdown = generateMarkdown(files);
+    assert.ok(document, "generated Markdown document was not opened");
+    const markdown = document.getText();
 
     assert.ok(markdown.startsWith("# Code Context"));
-    // Paths are present and come from the resolved URIs, not hardcoded strings.
     assert.ok(markdown.includes("a-gen.ts"));
     assert.ok(markdown.includes("z-gen.ts"));
-    // generateMarkdown sorts by path; a-gen must precede z-gen.
     assert.ok(markdown.indexOf("a-gen.ts") < markdown.indexOf("z-gen.ts"));
-    // File contents come from disk, not from the test.
     assert.ok(markdown.includes("const a = 1;"));
     assert.ok(markdown.includes("const z = 26;"));
   });
@@ -1402,7 +1937,10 @@ suite("Generate Context from Paths", () => {
 
   test("gitDiff mode includes a deleted tracked file", async () => {
     await withTemporaryGitRepository(
-      { "src/deleted.ts": "const removed = true;\n", "src/other.ts": "other\n" },
+      {
+        "src/deleted.ts": "const removed = true;\n",
+        "src/other.ts": "other\n",
+      },
       async (root) => {
         await rm(path.join(root, "src", "deleted.ts"));
         runGitForTest(root, ["add", "-A"]);

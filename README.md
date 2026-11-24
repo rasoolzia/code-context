@@ -79,6 +79,16 @@ Existing files are preserved.
 
 [Read the Import Paths documentation](docs/features/import-paths.md)
 
+### Route Report
+
+Analyze the workspace and generate a Markdown report of application routes for supported web frameworks.
+
+Supported frameworks: **Next.js** (App Router and Pages Router) and **Nuxt** (`pages/` convention).
+
+Framework detection is automatic. If multiple frameworks are found, a picker lets you choose.
+
+[Read the Route Report documentation](docs/features/route-report.md)
+
 ### Generate Context from Paths
 
 Paste a list of workspace-relative file paths and choose what kind of context to generate:
@@ -162,6 +172,7 @@ Export commands open editable untitled documents:
 - **CodeContext: Export Paths**
 - **CodeContext: Git Diff**
 - **CodeContext: Before/After Git Context**
+- **CodeContext: Route Report**
 
 Git commands and export commands that support Explorer resources can also be used from the Explorer context menu.
 
@@ -206,9 +217,9 @@ CodeContext has no runtime dependencies.
 
 ## Current Limitations
 
-CodeContext currently focuses on project files, structure, paths, and Git context.
+CodeContext currently focuses on project files, structure, paths, Git context, and route reporting for Next.js and Nuxt.
 
-Routing reports for frameworks such as **Next.js** and **Nuxt** are planned for a future release.
+Additional routing framework support (React Router, Vue Router, NestJS, etc.) is planned for a future release.
 
 Git operations require a Git installation and an accessible repository. Very large or binary files may have their contents omitted from context exports where reading the content is not appropriate.
 
@@ -225,6 +236,7 @@ Detailed feature documentation is available in the [`docs/features`](docs/featur
 - [Git Diff](docs/features/git-diff.md)
 - [Before/After Git Context](docs/features/before-after-git-context.md)
 - [Generate Context from Paths](docs/features/generate-context-from-paths.md)
+- [Route Report](docs/features/route-report.md)
 
 Architecture and development decisions are documented in:
 

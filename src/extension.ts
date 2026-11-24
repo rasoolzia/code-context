@@ -8,6 +8,7 @@ import { exportGitDiff } from "./commands/git-diff";
 import { importContent } from "./commands/import-content";
 import { importPaths } from "./commands/import-paths";
 import { importProjectTree } from "./commands/import-project-tree";
+import { routeReport } from "./commands/route-report";
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
@@ -84,6 +85,10 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       },
     ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("code-context.routeReport", routeReport),
   );
 }
 

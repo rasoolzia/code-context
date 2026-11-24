@@ -58,6 +58,11 @@
         "command": "code-context.beforeAfterGitContext",
         "title": "Before/After Git Context",
         "category": "CodeContext"
+      },
+      {
+        "command": "code-context.routeReport",
+        "title": "Route Report",
+        "category": "CodeContext"
       }
     ],
     "menus": {
@@ -85,6 +90,11 @@
         {
           "command": "code-context.beforeAfterGitContext",
           "group": "codecontext@5",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "code-context.routeReport",
+          "group": "codecontext@6",
           "when": "resourceScheme == file"
         }
       ]

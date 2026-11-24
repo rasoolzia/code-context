@@ -12,10 +12,11 @@
 - ✅ Git Diff / Changed Files Context
 - ✅ Before/After Git Context
 - ✅ Generate Context from Paths
+- ✅ Route Report (Next.js App Router, Next.js Pages Router, Nuxt)
 
 ## Planned
 
-- 🔜 Nuxt/Next.js routing report
+- 🔜 Route Report: additional framework support (React Router, Vue Router, NestJS, etc.)
 - 🔜 UX / commands / error handling / polish
 - 🔜 README + screenshots + packaging + Marketplace preparation
 - 🔜 Tag + GitHub Release
