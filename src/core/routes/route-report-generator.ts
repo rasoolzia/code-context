@@ -13,10 +13,10 @@ export function generateRouteReport(routes: RouteEntry[]): string {
   );
 
   const routeSections = orderedRoutes.flatMap((entry) => [
-    `### \`${escapeCell(entry.route)}\``,
+    `### \`${entry.route}\``,
     "",
     `- **Type:** ${entry.type}`,
-    `- **Source:** \`${escapeCell(entry.source)}\``,
+    `- **Source:** \`${entry.source}\``,
     "",
   ]);
   const tableRows = orderedRoutes.map(

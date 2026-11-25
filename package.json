@@ -16,17 +16,17 @@
     "commands": [
       {
         "command": "code-context.exportContent",
-        "title": "Export Content",
+        "title": "Content",
         "category": "CodeContext"
       },
       {
         "command": "code-context.exportTree",
-        "title": "Export Project Tree",
+        "title": "Project Tree",
         "category": "CodeContext"
       },
       {
         "command": "code-context.exportPaths",
-        "title": "Export Paths",
+        "title": "Paths",
         "category": "CodeContext"
       },
       {
@@ -51,12 +51,12 @@
       },
       {
         "command": "code-context.gitDiff",
-        "title": "Git Diff",
+        "title": "Diff",
         "category": "CodeContext"
       },
       {
         "command": "code-context.beforeAfterGitContext",
-        "title": "Before/After Git Context",
+        "title": "Before/After",
         "category": "CodeContext"
       },
       {
@@ -70,8 +70,39 @@
         "category": "CodeContext"
       }
     ],
+    "submenus": [
+      {
+        "id": "code-context.exportSubmenu",
+        "label": "Export"
+      },
+      {
+        "id": "code-context.gitSubmenu",
+        "label": "Git"
+      },
+      {
+        "id": "code-context.routesSubmenu",
+        "label": "Routes"
+      }
+    ],
     "menus": {
       "explorer/context": [
+        {
+          "submenu": "code-context.exportSubmenu",
+          "group": "codecontext@1",
+          "when": "resourceScheme == file"
+        },
+        {
+          "submenu": "code-context.gitSubmenu",
+          "group": "codecontext@2",
+          "when": "resourceScheme == file"
+        },
+        {
+          "submenu": "code-context.routesSubmenu",
+          "group": "codecontext@3",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "code-context.exportSubmenu": [
         {
           "command": "code-context.exportContent",
           "group": "codecontext@1",
@@ -86,20 +117,29 @@
           "command": "code-context.exportPaths",
           "group": "codecontext@3",
           "when": "resourceScheme == file"
-        },
+        }
+      ],
+      "code-context.gitSubmenu": [
         {
           "command": "code-context.gitDiff",
-          "group": "codecontext@4",
+          "group": "codecontext@1",
           "when": "resourceScheme == file"
         },
         {
           "command": "code-context.beforeAfterGitContext",
-          "group": "codecontext@5",
+          "group": "codecontext@2",
+          "when": "resourceScheme == file"
+        }
+      ],
+      "code-context.routesSubmenu": [
+        {
+          "command": "code-context.routeReport",
+          "group": "codecontext@1",
           "when": "resourceScheme == file"
         },
         {
-          "command": "code-context.routeReport",
-          "group": "codecontext@6",
+          "command": "code-context.routeReportPreview",
+          "group": "codecontext@2",
           "when": "resourceScheme == file"
         }
       ]

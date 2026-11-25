@@ -1806,7 +1806,9 @@ suite("Route Report — report generator", () => {
       { route: "/a|b", source: "app/a|b/page.tsx", type: "static" },
     ]);
 
-    assert.ok(report.includes("\\|"));
+    assert.ok(report.includes("### `/a|b`"));
+    assert.ok(report.includes("- **Source:** `app/a|b/page.tsx`"));
+    assert.ok(report.includes("| `/a\\|b` | static | `app/a\\|b/page.tsx` |"));
   });
 
   test("all route types are labelled correctly", () => {
