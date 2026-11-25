@@ -6,6 +6,14 @@ import { openExportDocument } from "../infrastructure/vscode/open-export-documen
 import { vscodeFilesystemReader } from "../infrastructure/vscode/vscode-filesystem-reader";
 
 export async function routeReport(): Promise<void> {
+  await generateAndOpenRouteReport(false);
+}
+
+export async function routeReportPreview(): Promise<void> {
+  await generateAndOpenRouteReport(true);
+}
+
+async function generateAndOpenRouteReport(preview: boolean): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders ?? [];
 
   if (workspaceFolders.length === 0) {
@@ -29,9 +37,7 @@ export async function routeReport(): Promise<void> {
   }
 
   const chosen =
-    candidates.length === 1
-      ? candidates[0]
-      : await pickCandidate(candidates);
+    candidates.length === 1 ? candidates[0] : await pickCandidate(candidates);
 
   if (!chosen) {
     return;
@@ -42,17 +48,13 @@ export async function routeReport(): Promise<void> {
     vscodeFilesystemReader,
   );
 
-  if (routes.length === 0) {
-    await vscode.window.showWarningMessage(
-      `No routes were found for ${chosen.scanner.frameworkName} in ${chosen.folderName}.`,
-    );
+  const markdown = generateRouteReport(routes);
 
-    return;
+  const document = await openExportDocument(markdown, "markdown");
+
+  if (preview) {
+    await vscode.commands.executeCommand("markdown.showPreview", document.uri);
   }
-
-  const markdown = generateRouteReport(chosen.scanner.frameworkName, routes);
-
-  await openExportDocument(markdown, "markdown");
 }
 
 // ── Detection ─────────────────────────────────────────────────────────────────

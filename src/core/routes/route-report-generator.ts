@@ -3,54 +3,48 @@ import type { RouteEntry } from "./route-entry";
 /**
  * Generates a deterministic Markdown route report.
  *
- * The report is intentionally concise and AI-friendly: a header section
- * identifies the framework, and a table lists every route with its source
- * file and type.
+ * Each route is shown in readable Markdown and in a structured table.
  */
-export function generateRouteReport(
-  frameworkName: string,
-  routes: RouteEntry[],
-): string {
-  const rows = routes.map((entry) =>
-    `| \`${escapeCell(entry.route)}\` | \`${escapeCell(entry.source)}\` | ${formatType(entry.type)} |`,
+export function generateRouteReport(routes: RouteEntry[]): string {
+  const orderedRoutes = [...routes].sort(
+    (left, right) =>
+      compareText(left.route, right.route) ||
+      compareText(left.source, right.source),
   );
 
-  const table = [
-    "| Route | Source | Type |",
-    "| --- | --- | --- |",
-    ...rows,
-  ];
-
-  const body =
-    routes.length === 0
-      ? ["*No routes found.*"]
-      : table;
+  const routeSections = orderedRoutes.flatMap((entry) => [
+    `### \`${escapeCell(entry.route)}\``,
+    "",
+    `- **Type:** ${entry.type}`,
+    `- **Source:** \`${escapeCell(entry.source)}\``,
+    "",
+  ]);
+  const tableRows = orderedRoutes.map(
+    (entry) =>
+      `| \`${escapeCell(entry.route)}\` | ${entry.type} | \`${escapeCell(entry.source)}\` |`,
+  );
 
   return [
     "# Route Report",
     "",
-    "## Framework",
-    "",
-    frameworkName,
-    "",
     "## Routes",
     "",
-    ...body,
+    ...(orderedRoutes.length === 0
+      ? ["*No routes found.*", ""]
+      : [
+          ...routeSections,
+          "## Route Table",
+          "",
+          "| Route | Type | Source |",
+          "| --- | --- | --- |",
+          ...tableRows,
+        ]),
     "",
   ].join("\n");
 }
 
-function formatType(type: RouteEntry["type"]): string {
-  switch (type) {
-    case "static":
-      return "Static";
-    case "dynamic":
-      return "Dynamic";
-    case "catch-all":
-      return "Catch-all";
-    case "optional-catch-all":
-      return "Optional catch-all";
-  }
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** Escape pipe characters inside a Markdown table cell. */

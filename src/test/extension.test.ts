@@ -1736,50 +1736,73 @@ suite("Route Report — detection", () => {
 });
 
 suite("Route Report — report generator", () => {
-  test("generates a Markdown report with framework and route table", () => {
-    const report = generateRouteReport("Next.js", [
-      { route: "/", source: "app/page.tsx", type: "static" },
+  test("generates readable route sections and a matching route table", () => {
+    const report = generateRouteReport([
       {
         route: "/users/[id]",
         source: "app/users/[id]/page.tsx",
         type: "dynamic",
       },
+      { route: "/", source: "app/page.tsx", type: "static" },
     ]);
 
-    assert.ok(report.startsWith("# Route Report"));
-    assert.ok(report.includes("## Framework"));
-    assert.ok(report.includes("Next.js"));
-    assert.ok(report.includes("## Routes"));
-    assert.ok(report.includes("`/`"));
-    assert.ok(report.includes("`/users/[id]`"));
-    assert.ok(report.includes("Static"));
-    assert.ok(report.includes("Dynamic"));
-  });
-
-  test("empty routes produces no-routes message", () => {
-    const report = generateRouteReport("Next.js", []);
-
-    assert.ok(report.includes("*No routes found.*"));
-  });
-
-  test("report is deterministic for the same input", () => {
-    const routes = [
-      {
-        route: "/about",
-        source: "app/about/page.tsx",
-        type: "static" as const,
-      },
-      { route: "/", source: "app/page.tsx", type: "static" as const },
-    ];
-
     assert.strictEqual(
-      generateRouteReport("Next.js", routes),
-      generateRouteReport("Next.js", routes),
+      report,
+      [
+        "# Route Report",
+        "",
+        "## Routes",
+        "",
+        "### `/`",
+        "",
+        "- **Type:** static",
+        "- **Source:** `app/page.tsx`",
+        "",
+        "### `/users/[id]`",
+        "",
+        "- **Type:** dynamic",
+        "- **Source:** `app/users/[id]/page.tsx`",
+        "",
+        "## Route Table",
+        "",
+        "| Route | Type | Source |",
+        "| --- | --- | --- |",
+        "| `/` | static | `app/page.tsx` |",
+        "| `/users/[id]` | dynamic | `app/users/[id]/page.tsx` |",
+        "",
+      ].join("\n"),
     );
   });
 
+  test("routes are sorted deterministically in both representations", () => {
+    const routes = [
+      { route: "/z", source: "pages/z.tsx", type: "static" as const },
+      { route: "/a", source: "pages/a.tsx", type: "static" as const },
+      { route: "/a", source: "src/pages/a.tsx", type: "static" as const },
+    ];
+    const forward = generateRouteReport(routes);
+    const reversed = generateRouteReport([...routes].reverse());
+
+    assert.strictEqual(forward, reversed);
+    assert.ok(forward.indexOf("### `/a`") < forward.indexOf("### `/z`"));
+    assert.ok(
+      forward.indexOf("pages/a.tsx") < forward.indexOf("src/pages/a.tsx"),
+    );
+    assert.ok(
+      forward.indexOf("| `/a` | static | `pages/a.tsx` |") <
+        forward.indexOf("| `/z` |"),
+    );
+  });
+
+  test("empty routes produce a clear empty state without an empty table", () => {
+    const report = generateRouteReport([]);
+
+    assert.ok(report.includes("*No routes found.*"));
+    assert.ok(!report.includes("## Route Table"));
+  });
+
   test("pipe characters in route paths are escaped", () => {
-    const report = generateRouteReport("Next.js", [
+    const report = generateRouteReport([
       { route: "/a|b", source: "app/a|b/page.tsx", type: "static" },
     ]);
 
@@ -1787,7 +1810,7 @@ suite("Route Report — report generator", () => {
   });
 
   test("all route types are labelled correctly", () => {
-    const report = generateRouteReport("Next.js", [
+    const report = generateRouteReport([
       { route: "/a", source: "app/a/page.tsx", type: "static" },
       { route: "/b/[id]", source: "app/b/[id]/page.tsx", type: "dynamic" },
       {
@@ -1802,10 +1825,10 @@ suite("Route Report — report generator", () => {
       },
     ]);
 
-    assert.ok(report.includes("Static"));
-    assert.ok(report.includes("Dynamic"));
-    assert.ok(report.includes("Catch-all"));
-    assert.ok(report.includes("Optional catch-all"));
+    assert.ok(report.includes("- **Type:** static"));
+    assert.ok(report.includes("- **Type:** dynamic"));
+    assert.ok(report.includes("- **Type:** catch-all"));
+    assert.ok(report.includes("- **Type:** optional-catch-all"));
   });
 });
 
@@ -1823,13 +1846,12 @@ suite("Route Report — integration (scanner → model → report)", () => {
     );
 
     const routes = await nextRouteScanner.scan(root, fs);
-    const report = generateRouteReport(nextRouteScanner.frameworkName, routes);
+    const report = generateRouteReport(routes);
 
-    assert.ok(report.includes("Next.js"));
     assert.ok(report.includes("`/`"));
     assert.ok(report.includes("`/about`"));
     assert.ok(report.includes("`/users/[id]`"));
-    assert.ok(report.includes("Dynamic"));
+    assert.ok(report.includes("- **Type:** dynamic"));
     assert.ok(report.indexOf("`/`") < report.indexOf("`/about`"));
     assert.ok(report.indexOf("`/about`") < report.indexOf("`/users/[id]`"));
   });
@@ -1845,9 +1867,8 @@ suite("Route Report — integration (scanner → model → report)", () => {
     );
 
     const routes = await nuxtRouteScanner.scan(root, fs);
-    const report = generateRouteReport(nuxtRouteScanner.frameworkName, routes);
+    const report = generateRouteReport(routes);
 
-    assert.ok(report.includes("Nuxt"));
     assert.ok(report.includes("`/`"));
     assert.ok(report.includes("`/about`"));
     assert.ok(report.includes("`/users/[id]`"));
@@ -1856,6 +1877,7 @@ suite("Route Report — integration (scanner → model → report)", () => {
   test("routeReport command is registered", async () => {
     const commands = await vscode.commands.getCommands(true);
     assert.ok(commands.includes("code-context.routeReport"));
+    assert.ok(commands.includes("code-context.routeReportPreview"));
   });
 });
 

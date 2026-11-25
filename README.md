@@ -83,9 +83,9 @@ Existing files are preserved.
 
 Analyze the workspace and generate a Markdown report of application routes for supported web frameworks.
 
-Supported frameworks: **Next.js** (App Router and Pages Router) and **Nuxt** (`pages/` convention).
+Supported frameworks: **Next.js** (App Router and Pages Router) and **Nuxt** (`pages/` and `app/pages/` conventions).
 
-Framework detection is automatic. If multiple frameworks are found, a picker lets you choose.
+Framework detection is automatic. If multiple frameworks are found, a picker lets you choose. Open the editable Markdown report or use **Route Report Preview** to open it in VS Code's Markdown preview.
 
 [Read the Route Report documentation](docs/features/route-report.md)
 

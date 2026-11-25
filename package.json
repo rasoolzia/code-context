@@ -63,6 +63,11 @@
         "command": "code-context.routeReport",
         "title": "Route Report",
         "category": "CodeContext"
+      },
+      {
+        "command": "code-context.routeReportPreview",
+        "title": "Route Report Preview",
+        "category": "CodeContext"
       }
     ],
     "menus": {
