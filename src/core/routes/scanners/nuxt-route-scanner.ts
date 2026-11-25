@@ -3,7 +3,16 @@ import type { FilesystemReader, RouteScanner } from "../route-scanner";
 
 /**
  * Nuxt file-based routing uses the `pages/` directory.
- * Supported conventions (Nuxt 3 stable subset):
+ *
+ * Nuxt 3:
+ *   pages/index.vue
+ *   pages/about.vue
+ *
+ * Nuxt 4:
+ *   app/pages/index.vue
+ *   app/pages/about.vue
+ *
+ * Supported conventions:
  *
  *   pages/index.vue            → /
  *   pages/about.vue            → /about
@@ -11,13 +20,12 @@ import type { FilesystemReader, RouteScanner } from "../route-scanner";
  *   pages/users/[id].vue       → /users/[id]          (dynamic)
  *   pages/docs/[...slug].vue   → /docs/[...slug]      (catch-all)
  *
- * Nuxt 3 does not have optional catch-all in the same [[...param]] syntax
- * as Next.js; that pattern is not supported here.
- *
- * Only `.vue` files are treated as route files. `.ts`/`.js` files inside
- * pages/ are not route files in Nuxt's convention.
+ * Only `.vue` files are treated as route files in the supported Nuxt
+ * file-based routing subset.
  */
 const NUXT_ROUTE_EXTENSION = ".vue";
+
+const NUXT_PAGES_DIRECTORIES = [["app", "pages"], ["pages"]] as const;
 
 export const nuxtRouteScanner: RouteScanner = {
   frameworkName: "Nuxt",
@@ -29,14 +37,19 @@ export const nuxtRouteScanner: RouteScanner = {
       return false;
     }
 
-    return (await fs.readDirectory(join(workspaceRoot, "pages"))) !== undefined;
+    return (await findPagesDirectory(workspaceRoot, fs)) !== undefined;
   },
 
   async scan(workspaceRoot, fs): Promise<RouteEntry[]> {
-    const pagesDir = join(workspaceRoot, "pages");
+    const pagesDir = await findPagesDirectory(workspaceRoot, fs);
+
+    if (!pagesDir) {
+      return [];
+    }
+
     const routes: RouteEntry[] = [];
 
-    await scanPagesDirectory(workspaceRoot, pagesDir, "", routes, fs);
+    await scanPagesDirectory(workspaceRoot, pagesDir.path, "", routes, fs);
 
     return sortRoutes(routes);
   },
@@ -83,11 +96,30 @@ async function scanPagesDirectory(
           : routePrefix
         : `${routePrefix}/${base}`;
 
-    routes.push({ route, source, type: classifyRoute(route) });
+    routes.push({
+      route,
+      source,
+      type: classifyRoute(route),
+    });
   }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function findPagesDirectory(
+  workspaceRoot: string,
+  fs: FilesystemReader,
+): Promise<{ path: string } | undefined> {
+  for (const segments of NUXT_PAGES_DIRECTORIES) {
+    const path = join(workspaceRoot, ...segments);
+
+    if ((await fs.readDirectory(path)) !== undefined) {
+      return { path };
+    }
+  }
+
+  return undefined;
+}
 
 async function hasNuxtDependency(
   workspaceRoot: string,

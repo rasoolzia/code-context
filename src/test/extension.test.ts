@@ -1329,6 +1329,7 @@ suite("Route Report — Next.js scanner", () => {
 
     assert.strictEqual(routes.length, 1);
     assert.strictEqual(routes[0].route, "/docs/[...slug]");
+    assert.strictEqual(routes[0].source, "app/docs/[...slug]/page.tsx");
     assert.strictEqual(routes[0].type, "catch-all");
   });
 
@@ -1342,6 +1343,7 @@ suite("Route Report — Next.js scanner", () => {
 
     assert.strictEqual(routes.length, 1);
     assert.strictEqual(routes[0].route, "/shop/[[...slug]]");
+    assert.strictEqual(routes[0].source, "app/shop/[[...slug]]/page.tsx");
     assert.strictEqual(routes[0].type, "optional-catch-all");
   });
 
@@ -1367,6 +1369,44 @@ suite("Route Report — Next.js scanner", () => {
 
     assert.strictEqual(routes.length, 1);
     assert.strictEqual(routes[0].route, "/");
+  });
+
+  test("App Router: parallel and intercepting route folders are excluded", async () => {
+    const fs = nextFs({
+      [`${root}/app`]: [
+        "@modal/",
+        "(.)photo/",
+        "(..)photo/",
+        "(...)photo/",
+        "page.tsx",
+      ],
+      [`${root}/app/@modal`]: ["page.tsx"],
+      [`${root}/app/(.)photo`]: ["page.tsx"],
+      [`${root}/app/(..)photo`]: ["page.tsx"],
+      [`${root}/app/(...)photo`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.deepStrictEqual(routes, [
+      { route: "/", source: "app/page.tsx", type: "static" },
+    ]);
+  });
+
+  test("App Router: src/app layout uses workspace-relative source paths", async () => {
+    const fs = nextFs({
+      [`${root}/src/app`]: ["users/"],
+      [`${root}/src/app/users`]: ["[id]/"],
+      [`${root}/src/app/users/[id]`]: ["page.tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.deepStrictEqual(routes, [
+      {
+        route: "/users/[id]",
+        source: "src/app/users/[id]/page.tsx",
+        type: "dynamic",
+      },
+    ]);
   });
 
   test("App Router: non-route files (layout, loading, error) are ignored", async () => {
@@ -1446,6 +1486,23 @@ suite("Route Report — Next.js scanner", () => {
     assert.strictEqual(routes[0].route, "/users/[id]");
     assert.strictEqual(routes[0].source, "pages/users/[id].tsx");
     assert.strictEqual(routes[0].type, "dynamic");
+  });
+
+  test("Pages Router: src/pages layout includes src in source paths", async () => {
+    const fs = nextFs({
+      [`${root}/src/pages`]: ["index.tsx", "users/"],
+      [`${root}/src/pages/users`]: ["[id].tsx"],
+    });
+    const routes = await nextRouteScanner.scan(root, fs);
+
+    assert.deepStrictEqual(routes, [
+      { route: "/", source: "src/pages/index.tsx", type: "static" },
+      {
+        route: "/users/[id]",
+        source: "src/pages/users/[id].tsx",
+        type: "dynamic",
+      },
+    ]);
   });
 
   test("Pages Router: _app and _document are ignored", async () => {
@@ -1532,6 +1589,64 @@ suite("Route Report — Nuxt scanner", () => {
 
     assert.strictEqual(routes[0].route, "/docs/[...slug]");
     assert.strictEqual(routes[0].type, "catch-all");
+  });
+
+  test("Nuxt 3 pages layout detects and scans common routes", async () => {
+    const fs = nuxtFs({
+      [`${root}/pages`]: ["index.vue", "about.vue", "projects.vue", "blog/"],
+      [`${root}/pages/blog`]: ["index.vue", "[slug].vue"],
+    });
+
+    assert.strictEqual(await nuxtRouteScanner.detect(root, fs), true);
+    assert.deepStrictEqual(await nuxtRouteScanner.scan(root, fs), [
+      { route: "/", source: "pages/index.vue", type: "static" },
+      { route: "/about", source: "pages/about.vue", type: "static" },
+      { route: "/blog", source: "pages/blog/index.vue", type: "static" },
+      {
+        route: "/blog/[slug]",
+        source: "pages/blog/[slug].vue",
+        type: "dynamic",
+      },
+      { route: "/projects", source: "pages/projects.vue", type: "static" },
+    ]);
+  });
+
+  test("Nuxt 4 app/pages layout detects and scans common routes", async () => {
+    const fs = nuxtFs({
+      [`${root}/app`]: ["pages/"],
+      [`${root}/app/pages`]: [
+        "index.vue",
+        "about.vue",
+        "projects.vue",
+        "blog/",
+      ],
+      [`${root}/app/pages/blog`]: ["index.vue", "[...slug].vue"],
+    });
+
+    assert.strictEqual(await nuxtRouteScanner.detect(root, fs), true);
+    assert.deepStrictEqual(await nuxtRouteScanner.scan(root, fs), [
+      { route: "/", source: "app/pages/index.vue", type: "static" },
+      { route: "/about", source: "app/pages/about.vue", type: "static" },
+      { route: "/blog", source: "app/pages/blog/index.vue", type: "static" },
+      {
+        route: "/blog/[...slug]",
+        source: "app/pages/blog/[...slug].vue",
+        type: "catch-all",
+      },
+      { route: "/projects", source: "app/pages/projects.vue", type: "static" },
+    ]);
+  });
+
+  test("app/pages takes precedence when both Nuxt pages layouts exist", async () => {
+    const fs = nuxtFs({
+      [`${root}/app`]: ["pages/"],
+      [`${root}/app/pages`]: ["about.vue"],
+      [`${root}/pages`]: ["index.vue", "about.vue"],
+    });
+
+    assert.deepStrictEqual(await nuxtRouteScanner.scan(root, fs), [
+      { route: "/about", source: "app/pages/about.vue", type: "static" },
+    ]);
   });
 
   test("non-.vue files are ignored", async () => {
