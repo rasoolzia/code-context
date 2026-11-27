@@ -246,6 +246,19 @@ Architecture and development decisions are documented in:
 
 ## Release
 
+### 0.2.0
+
+Added advanced project context workflows and route reporting.
+
+- Added Generate Context from Paths
+- Added Next.js route reporting
+- Added Nuxt route reporting, including Nuxt 4 `app/pages`
+- Added Route Report Preview
+- Added improved Git Diff and Before/After Git Context workflows
+- Added grouped Explorer context menus
+- Improved multi-root workspace support
+- Improved validation and deterministic output across export and import workflows
+
 ### 0.1.0
 
 Initial public release.
