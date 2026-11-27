@@ -2,7 +2,7 @@
   "name": "codecontext-toolkit",
   "displayName": "CodeContext Toolkit",
   "description": "Developer toolkit for exporting, importing, exploring, and sharing project context.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "rasoolzia",
   "license": "MIT",
   "repository": {
